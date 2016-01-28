@@ -10,7 +10,10 @@ Walkthrough from Vince at McGill about setting up WWmaster on his cluster.
 Objective
 
 To describe deployment of Warewulf master node for the Hydra Cluster.
-The Warewulf Master is deployed on same server and the HYDRA File Server on host, ~~D1P-HYDRAFS01~~. **Change to our server name, Head node Marge, worker nodes Lisa[01-9]** This deployment assumes that the server is configured as per document Hydra-FileServer-CentOS7. **We don't have that doc from Vince**
+The Warewulf Master is deployed on same server and the HYDRA File Server on host, ~~D1P-HYDRAFS01~~. 
+**DSE - Change to our server name, Head node Marge, worker nodes Lisa[01-9]** 
+This deployment assumes that the server is configured as per document Hydra-FileServer-CentOS7. 
+**We don't have that doc from Vince**
 
 Assumes:
 1. Internet connectivity.
@@ -22,7 +25,8 @@ Install
 
 Warewulf dependencies
 
-**pigz? Will perl-DBD-MySQL talk with mariadb? Why use mariaDB instead of MySQL?**
+**pigz? It is a parallel gzip. Not needed for warewulf, but nice to have.**
+**Will perl-DBD-MySQL talk with mariadb? Why use mariaDB instead of MySQL? Probably not a big deal.**
 **libselinux-devel aren't we diabling SELinux? **
 **Crypt::HSXKPasswd? Looks like it's a specific function in the Crypt Perl module. What does it do?**
 
@@ -60,7 +64,7 @@ $ systemctl status firewalld  # off
 
 Install Warewulf
 
-**build_it function creates RPM build environment. First argument is where source files are located (e.g. /root/warewulf/common/), second argument is where RPMs will be built /root/rpmbuild/. Makes everything in first argument dir, then copies all warewulf files to /root/rpmbuild/SOURCES, but I don't understand the very last command rpmbuild -bb ./.spec. The command is still in /root/warewulf/common, is rpmbuild run from there? Might be nice to run the function on the first warewulf component and see where files are created.**
+**build_it function creates RPM build environment. First argument is where source files are located (e.g. /root/warewulf/common/), second argument is where RPMs will be built /root/rpmbuild/. Makes everything in first argument dir, then copies all warewulf files to /root/rpmbuild/SOURCES, but I don't understand the very last command rpmbuild -bb ./.spec. The command is still in /root/warewulf/common, is rpmbuild run from there? Might be nice to run the function on the first warewulf component and see where files are created. SPEC file directs rpmbuild kind of like a makefile for make.**
 
 ```
 # Build Warewulf from SVN
@@ -69,8 +73,8 @@ $ WW_DIR=/root/warewulf
 $ RPM_DIR=/root/rpmbuild/RPMS/
 $ function build_it { cd $1 && ./autogen.sh && make dist-gzip && make distcheck && cp -fa warewulf-*.tar.gz $2/SOURCES/ && rpmbuild -bb ./*.spec; }
 ```
-**Regarding h2ph command, why convert all C files to perl files in /usr/include? And where are the converted files placed? **
-**We should probably verify that perl is in /usr/local/lib64/perl5, and if not symlink it there**
+**Regarding h2ph command, why convert all C files to perl files in /usr/include? And where are the converted files placed? Don't worry about it.**
+**We could probably verify that perl is in /usr/local/lib64/perl5, and if not symlink it there, but let's not worry about that now**
 
 ```
 $ cd /usr/include
@@ -79,7 +83,7 @@ $ h2ph -al * sys/*
 $ mkdir -p $BUILD_DIR/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 $ mkdir /root/warewulf
 ```
-**downlaod to /root/warewulf. Why is echo p piped to svn? **
+**downlaod to /root/warewulf. Why is echo p piped to svn? Who cares.**
 ```
 $ echo p | svn co https://warewulf.lbl.gov/svn/trunk/ /root/warewulf 
 $ build_it $WW_DIR/common $BUILD_DIR
@@ -94,6 +98,7 @@ $ build_it $WW_DIR/vnfs $BUILD_DIR
 $ yum install -y $RPM_DIR/noarch/warewulf-vnfs-*.rpm
 ```
 **Symlinks and dependencies needed to build monitor component?**
+**What do the different warewulf components do? I'll RTFM**
 ```
 # monitor
 $ ln -s /usr/lib64/libjson.so.0 /usr/lib64/libjson.so
@@ -129,6 +134,7 @@ Configure
 Set NIC interface used to provision OS image
 
 **eno1? Will we use eth1? Does Vince's use of eno1 indicate he is using a different type of NIC?**
+
 ```
 $ vi /etc/warewulf/provision.conf
 # What is the default network device that the master will use to communicate with the nodes?
@@ -169,7 +175,7 @@ $ systemctl restart xinetd
 
 Setup MariaDB
 **And why not MySQL? I don't see where MariaDB is specified instead of MySQL. How does warewulf know whether to use MariaDB or MySQL?**
-
+**logged in as root, so ~ = /root/**
 ```
 $ vi ~/.my.cnf
 [client]
@@ -227,7 +233,7 @@ $ ssh-keygen -f ~/.ssh/identity
 ***
 Provision Configuration
 
-**Not sure I understand pdsh command**
+**Not sure I understand pdsh command. Run help on wwgetfiles to see what it does.**
 Sync users, groups, and passwords
 ```
 $ wwsh -y file import /etc/passwd
