@@ -19,6 +19,10 @@ Assumes:
 2. SELinux and firewall disabled.
 3. EPEL repository enabled.
 
+```
+hostname marge
+```
+
 ### CentOS accounts
 user name | Pass
 ----------|-----------
@@ -73,8 +77,8 @@ ifconfig eth1
 ### Hostnames and IP addresses
 host name   | IP address
 ------------|-----------
-centos-sfcc | 
-n0000       | 
+marge       | 10.2.0.128 / LAN internal 172.10.10.2
+biostat1/NFS| 10.2.0.129 / LAN internal 172.10.10.3
 n0001       | 
 n0002       | 
 
