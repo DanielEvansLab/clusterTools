@@ -13,15 +13,229 @@ To describe deployment of Warewulf master node for the Hydra Cluster.
 The Warewulf Master is deployed on same server and the HYDRA File Server on host, ~~D1P-HYDRAFS01~~. 
 **DSE - Change to our server name, Head node Marge, worker nodes Lisa[01-9]** 
 This deployment assumes that the server is configured as per document Hydra-FileServer-CentOS7. 
-**We don't have that doc from Vince**
 
 Assumes:
 1. Internet connectivity.
 2. SELinux and firewall disabled.
 3. EPEL repository enabled.
 
-***
-Install
+### CentOS accounts
+user name | Pass
+----------|-----------
+root      | 
+devans    | 
+
+
+## Configure network interfaces.
+### Head node configuration
+* hostname is CENTOS-SFCC
+* network interfaces
+  + eth0 connected to internet, IP assigned via DHCP
+  + eth1 connected to GigE switch to workers
+  
+  Manually assign IP to eth1 on head node by editing this file
+/etc/sysconfig/network-scripts/ifcfg-eth1
+
+```
+DEVICE=eth1
+HWADDR=xx:xx:xx:xx:xx:xx
+TYPE=Ethernet
+ONBOOT=yes
+BOOTPROTO=none
+IPV6INIT=no
+USERCTL=no
+NM_CONTROLLED=yes
+PEERDNS=yes
+IPADDR=
+NETMASK=255.255.255.0
+```
+Configure default gateway
+/etc/sysconfig/network
+```
+NETWORKING=yes
+HOSTNAME=CENTOS-SFCC
+GATEWAY=xxx.xxx.xxx.xxx
+```
+
+Should we configure DNS servers, or leave this blank to use /etc/hosts?
+/etc/resolv.conf
+```
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+```
+
+Restart the network interface, then check interface
+```
+/etc/init.d/network restart
+ifconfig eth1
+```
+
+### Hostnames and IP addresses
+host name   | IP address
+------------|-----------
+centos-sfcc | 
+n0000       | 
+n0001       | 
+n0002       | 
+
+After manually assigning IP to eth1, needed to start it with:
+```
+ifconfig eth1 up
+```
+
+
+
+
+---
+Hydra-FileServer-CentOS7 write-up from Vince
+---
+
+##OS installation
+Installed CentOS 7 from USB key.
+Restrict SSH login to root and devans:
+```
+$ vi /etc/ssh/sshd_config
+# add following
+AllowUsers root vforget
+
+$ systemctl restart sshd
+```
+
+Local filesystem:
+```
+Filesystem                                     Size  Used Avail Use% Mounted on
+/dev/mapper/centos-root                        222G  1.1G  221G   1% /
+devtmpfs                                       7.8G     0  7.8G   0% /dev
+tmpfs                                          7.8G     0  7.8G   0% /dev/shm
+tmpfs                                          7.8G  8.9M  7.8G   1% /run
+tmpfs                                          7.8G     0  7.8G   0% /sys/fs/cgroup
+/dev/sda1                                      4.7G  170M  4.5G   4% /boot
+/dev/mapper/centos-home                         47G   33M   47G   1% /home
+```
+
+Disable SELinux
+
+```
+$ vi /etc/selinux/config
+
+# This file controls the state of SELinux on the system.
+# SELINUX= can take one of these three values:
+#     enforcing - SELinux security policy is enforced.
+#     permissive - SELinux prints warnings instead of enforcing.
+#     disabled - No SELinux policy is loaded.
+SELINUX=disabled
+# SELINUXTYPE= can take one of these two values:
+#     targeted - Targeted processes are protected,
+#     mls - Multi Level Security protection.
+SELINUXTYPE=targeted
+
+```
+
+Reboot
+
+Disable firewall
+
+```
+$ systemctl disable firewalld
+$ systemctl stop firewalld
+```
+
+Update packages
+
+```
+yum update
+```
+
+##NTP
+
+```
+$ yum install ntp
+$ systemctl enable ntpd
+$ systemctl start ntpd
+$ timedatectl set-ntp yes
+```
+
+##Networking
+
+Vince had lots of hydra-specific details
+
+Add hostname to /etc/hosts
+```
+$ cat /etc/hosts
+192.168.13.10 D1P-HYDRAFS01 D1P-HYDRAFS01.ldi.lan
+127.0.0.1   D1P-HYDRAFS01 D1P-HYDRAFS01.ldi.lan localhost localhost.localdomain localhost4 localhost4.localdomain4
+::1         localhost localhost.localdomain localhost6 localhost6.localdomain6
+```
+
+##NFS
+
+Install:
+```
+$ yum install nfs-utils nfs-utils-lib nfswatch
+```
+Run on startup:
+```
+$ systemctl enable nfs-server
+$ systemctl start nfs-server
+```
+
+According to following advice, no additional services are required to run NFSv4:
+http://serverfault.com/questions/530908/nfsv4-and-rpcbind
+However, downstream Warewulf config needs rpcbind:
+
+```
+$ systemctl enable rpcbind
+$ systemctl start rpcbind
+```
+
+Add following to /etc/exports:
+```
+/mnt/KLEINMAN_BACKUP 192.168.13.10/24(rw,async,no_subtree_check,no_root_squash)
+/mnt/KLEINMAN_SCRATCH 192.168.13.10/24(rw,async,no_subtree_check,no_root_squash)
+/mnt/GREENWOOD_BACKUP 192.168.13.10/24(rw,async,no_subtree_check,no_root_squash)
+/mnt/GREENWOOD_SCRATCH 192.168.13.10/24(rw,async,no_subtree_check,no_root_squash)
+```
+
+Load/Reload exported file systems:
+```
+$ exportfs -rv
+```
+
+On client add to /etc/fstab:
+```
+192.168.13.10:/mnt/KLEINMAN_BACKUP /mnt/KLEINMAN_BACKUP nfs defaults,async 0 0
+192.168.13.10:/mnt/GREENWOOD_BACKUP /mnt/GREENWOOD_BACKUP nfs defaults,async 0 0
+192.168.13.10:/mnt/KLEINMAN_SCRATCH /mnt/KLEINMAN_SCRATCH nfs defaults,async 0 0
+192.168.13.10:/mnt/GREENWOOD_SCRATCH /mnt/GREENWOOD_SCRATCH nfs defaults,async 0 0
+```
+
+Mount file systems:
+```
+$ mount -a
+```
+
+##Optimization
+
+```
+$ /etc/sysconfig/nfs
+RPCNFSDCOUNT=16
+```
+
+##Install a few dependencies
+```
+$ yum install wget
+$ wget http://dl.fedoraproject.org/pub/epel/7/x86_64/e/epel-release-7-5.noarch.rpm
+$ rpm -Uvh epel-release-7*.rpm
+$ yum update
+$ yum install bonnie++
+$ yum install yum-utils
+$ yum install impitool
+$ yum install emacs
+$ yum install iperf
+```
+
+
+##Install
 
 Warewulf dependencies
 
