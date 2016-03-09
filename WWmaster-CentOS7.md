@@ -3,16 +3,8 @@ title: "WWmaster CentOS7 from Vince"
 output: html_document
 ---
 
-Walkthrough from Vince at McGill about setting up WWmaster on his cluster.
-**Dan's comments in bold**
 
-***
-Objective
-
-To describe deployment of Warewulf master node for the Hydra Cluster.
-The Warewulf Master is deployed on same server and the HYDRA File Server on host, ~~D1P-HYDRAFS01~~. 
-**DSE - Change to our server name, Head node Marge, worker nodes Lisa[01-9]** 
-This deployment assumes that the server is configured as per document Hydra-FileServer-CentOS7. 
+**Head node Marge, worker nodes Lisa[01-9]** 
 
 Assumes:
 1. Internet connectivity.
@@ -32,63 +24,23 @@ devans    |
 
 ## Configure network interfaces.
 ### Head node configuration
-* hostname is CENTOS-SFCC
+* hostname is marge
 * network interfaces
   + eth0 connected to internet, IP assigned via DHCP
   + eth1 connected to GigE switch to workers
   
-  Manually assign IP to eth1 on head node by editing this file
-/etc/sysconfig/network-scripts/ifcfg-eth1
-
-```
-DEVICE=eth1
-HWADDR=xx:xx:xx:xx:xx:xx
-TYPE=Ethernet
-ONBOOT=yes
-BOOTPROTO=none
-IPV6INIT=no
-USERCTL=no
-NM_CONTROLLED=yes
-PEERDNS=yes
-IPADDR=
-NETMASK=255.255.255.0
-```
-Configure default gateway
-/etc/sysconfig/network
-```
-NETWORKING=yes
-HOSTNAME=CENTOS-SFCC
-GATEWAY=xxx.xxx.xxx.xxx
-```
-
-Should we configure DNS servers, or leave this blank to use /etc/hosts?
-/etc/resolv.conf
-```
-nameserver 8.8.8.8
-nameserver 8.8.4.4
-```
-
-Restart the network interface, then check interface
-```
-/etc/init.d/network restart
-ifconfig eth1
-```
 
 ### Hostnames and IP addresses
 host name   | IP address
 ------------|-----------
 marge       | 10.2.0.128 / LAN internal 172.10.10.2
-biostat1/NFS| 10.2.0.129 / LAN internal 172.10.10.3
+ringo/NFS| 10.2.0.129 / LAN internal 172.10.10.3
 n0001       | 
 n0002       | 
 
 After manually assigning IP to eth1, needed to start it with:
-```
-ifconfig eth1 up
-```
-
-
-
+/etc/sysconfig/network-scripts/ifcfg-eth1
+ONBOOT="yes"
 
 ---
 Hydra-FileServer-CentOS7 write-up from Vince
@@ -96,6 +48,7 @@ Hydra-FileServer-CentOS7 write-up from Vince
 
 ##OS installation
 Installed CentOS 7 from USB key.
+To do later:
 Restrict SSH login to root and devans:
 ```
 $ vi /etc/ssh/sshd_config
@@ -105,7 +58,7 @@ AllowUsers root vforget
 $ systemctl restart sshd
 ```
 
-Local filesystem:
+
 ```
 Filesystem                                     Size  Used Avail Use% Mounted on
 /dev/mapper/centos-root                        222G  1.1G  221G   1% /
@@ -137,6 +90,8 @@ SELINUXTYPE=targeted
 
 Reboot
 
+
+
 Disable firewall
 
 ```
@@ -154,7 +109,7 @@ yum update
 
 ```
 $ yum install ntp
-$ systemctl enable ntpd
+$ systemctl enable ntpd  #
 $ systemctl start ntpd
 $ timedatectl set-ntp yes
 ```
@@ -175,6 +130,15 @@ $ cat /etc/hosts
 
 Install:
 ```
+$ wget http://dl.fedoraproject.org/pub/epel/7/x86_64/e/epel-release-7-5.noarch.rpm
+$ rpm -Uvh epel-release-7*.rpm
+$ yum update
+$ yum install bonnie++
+$ yum install yum-utils
+$ yum install impitool
+$ yum install emacs
+$ yum install iperf
+
 $ yum install nfs-utils nfs-utils-lib nfswatch
 ```
 Run on startup:
@@ -227,15 +191,7 @@ RPCNFSDCOUNT=16
 
 ##Install a few dependencies
 ```
-$ yum install wget
-$ wget http://dl.fedoraproject.org/pub/epel/7/x86_64/e/epel-release-7-5.noarch.rpm
-$ rpm -Uvh epel-release-7*.rpm
-$ yum update
-$ yum install bonnie++
-$ yum install yum-utils
-$ yum install impitool
-$ yum install emacs
-$ yum install iperf
+
 ```
 
 
