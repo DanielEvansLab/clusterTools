@@ -26,7 +26,7 @@ devans    |
 ### Head node configuration
 * hostname is marge
 * network interfaces
-  + eth0 connected to internet, IP assigned via DHCP
+  + eth0 connected to internet
   + eth1 connected to GigE switch to workers
   
 
@@ -38,16 +38,14 @@ ringo/NFS| 10.2.0.129 / LAN internal 172.10.10.3
 n0001       | 
 n0002       | 
 
-After manually assigning IP to eth1, needed to start it with:
+After manually assigning IP to eth1, we edited the file below
 /etc/sysconfig/network-scripts/ifcfg-eth1
 ONBOOT="yes"
 
----
-Hydra-FileServer-CentOS7 write-up from Vince
----
 
 ##OS installation
 Installed CentOS 7 from USB key.
+
 To do later:
 Restrict SSH login to root and devans:
 ```
@@ -57,18 +55,7 @@ AllowUsers root vforget
 
 $ systemctl restart sshd
 ```
-
-
-```
-Filesystem                                     Size  Used Avail Use% Mounted on
-/dev/mapper/centos-root                        222G  1.1G  221G   1% /
-devtmpfs                                       7.8G     0  7.8G   0% /dev
-tmpfs                                          7.8G     0  7.8G   0% /dev/shm
-tmpfs                                          7.8G  8.9M  7.8G   1% /run
-tmpfs                                          7.8G     0  7.8G   0% /sys/fs/cgroup
-/dev/sda1                                      4.7G  170M  4.5G   4% /boot
-/dev/mapper/centos-home                         47G   33M   47G   1% /home
-```
+End of To do later.
 
 Disable SELinux
 
@@ -109,7 +96,7 @@ yum update
 
 ```
 $ yum install ntp
-$ systemctl enable ntpd  #
+$ systemctl enable ntpd  
 $ systemctl start ntpd
 $ timedatectl set-ntp yes
 ```
@@ -121,9 +108,9 @@ Vince had lots of hydra-specific details
 Add hostname to /etc/hosts
 ```
 $ cat /etc/hosts
-192.168.13.10 D1P-HYDRAFS01 D1P-HYDRAFS01.ldi.lan
-127.0.0.1   D1P-HYDRAFS01 D1P-HYDRAFS01.ldi.lan localhost localhost.localdomain localhost4 localhost4.localdomain4
-::1         localhost localhost.localdomain localhost6 localhost6.localdomain6
+127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4 marge
+::1         localhost localhost.localdomain localhost6 localhost6.localdomain6 marge
+172.10.10.3 ringo
 ```
 
 ##NFS
@@ -139,7 +126,9 @@ $ yum install impitool
 $ yum install emacs
 $ yum install iperf
 
-$ yum install nfs-utils nfs-utils-lib nfswatch
+$ yum install nfs-utils 
+$ yum install libnfsidmap #we changed this from nfs-utils-lib because that wasn't available on yum
+$ yum install nfswatch #we didn't install this, this package wasn't available in yum
 ```
 Run on startup:
 ```
@@ -151,11 +140,13 @@ According to following advice, no additional services are required to run NFSv4:
 http://serverfault.com/questions/530908/nfsv4-and-rpcbind
 However, downstream Warewulf config needs rpcbind:
 
+rpcbind enables computer inter-communication
 ```
 $ systemctl enable rpcbind
 $ systemctl start rpcbind
 ```
 
+Deal with this later.
 Add following to /etc/exports:
 ```
 /mnt/KLEINMAN_BACKUP 192.168.13.10/24(rw,async,no_subtree_check,no_root_squash)
@@ -183,6 +174,7 @@ $ mount -a
 ```
 
 ##Optimization
+Richard did that.
 
 ```
 $ /etc/sysconfig/nfs
@@ -199,20 +191,16 @@ RPCNFSDCOUNT=16
 
 Warewulf dependencies
 
-**pigz? It is a parallel gzip. Not needed for warewulf, but nice to have.**
-**Will perl-DBD-MySQL talk with mariadb? Why use mariaDB instead of MySQL? Probably not a big deal.**
-**libselinux-devel aren't we diabling SELinux? **
-**Crypt::HSXKPasswd? Looks like it's a specific function in the Crypt Perl module. What does it do?**
-
 ```
 $ yum group install 'Development tools'
-$ yum install tcpdump tftp tftp-server pigz dhcp nfs-utils nfs-utils-lib ntp httpd 
+$ yum install tcpdump tftp tftp-server pigz dhcp httpd 
 $ yum install perl-DBD-MySQL mariadb mariadb-server perl-Term-ReadLine-Gnu mod_perl perl-CGI
 $ yum install libselinux-devel libacl-devel libattr-devel
 $ yum install cpan
 $ cpan Module::Build
-$ cpan YAML
+##this threw errors, but fixed using sudo
 $ cpan DateTime
+$ cpan YAML
 $ cpan Crypt::HSXKPasswd
 
 ```
@@ -254,12 +242,14 @@ $ function build_it { cd $1 && ./autogen.sh && make dist-gzip && make distcheck 
 $ cd /usr/include
 $ h2ph -al * sys/*
 # Warning from h2ph: Destination directory /usr/local/lib64/perl5 doesn't exist or isn't a directory
+#we didn't see that warning.
 $ mkdir -p $BUILD_DIR/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 $ mkdir /root/warewulf
 ```
 **downlaod to /root/warewulf. Why is echo p piped to svn? Who cares.**
 ```
 $ echo p | svn co https://warewulf.lbl.gov/svn/trunk/ /root/warewulf 
+#checked out revision 1962
 $ build_it $WW_DIR/common $BUILD_DIR
 $ yum install -y $RPM_DIR/noarch/warewulf-common-*.rpm
 $ build_it $WW_DIR/provision $BUILD_DIR
@@ -312,7 +302,7 @@ Set NIC interface used to provision OS image
 ```
 $ vi /etc/warewulf/provision.conf
 # What is the default network device that the master will use to communicate with the nodes?
-network device = eno1
+network device = eth1
 
 ```
 
@@ -343,12 +333,15 @@ service tftp
 
 Restart xinetd
 
+/etc/xinetd.d/tftp existed, but xinetd wasn't present, so we had to install it. Did you find that?
+
 ```
-$ systemctl restart xinetd
+yum install xinetd
+systemctl enable xinetd
+systemctl restart xinetd
 ```
 
 Setup MariaDB
-**And why not MySQL? I don't see where MariaDB is specified instead of MySQL. How does warewulf know whether to use MariaDB or MySQL?**
 **logged in as root, so ~ = /root/**
 ```
 $ vi ~/.my.cnf
@@ -368,6 +361,7 @@ password =
 
 Setup VNFS
 **We should talk about this. Should we remove some dirs from the chroot to be nfs mounted to save RAM in the chroot? Alaric would say no, since we bought lots of RAM, but more RAM is always good.**
+#We decided to leave it commented out, so we're not using VNFS.
 ```
 $ vi /etc/warewulf/vnfs.conf
 # uncomment hybridpath =
