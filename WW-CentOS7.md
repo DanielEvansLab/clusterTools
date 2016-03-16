@@ -1,63 +1,114 @@
 ---
-title: "WWmaster CentOS7 from Vince"
+title: "WWmaster CentOS7 installation walkthrough"
 output: html_document
 ---
 
+#This walkthrough is a combination of RedBarn HPC notes and Vince's notes
 
-**Head node Marge, worker nodes Lisa[01-9]** 
+Download, burn, and boot from Minimal Install CD for CentOS 7.  Accept all defaults, do not select options. Do enable networking.
 
-Assumes:
-1. Internet connectivity.
-2. SELinux and firewall disabled.
-3. EPEL repository enabled.
+RB-HPC suggests to disable or remove Network Manager on the head node.
+We might do this later, but not this time
+```
+#service NetworkManager stop
+#chkconfig NetworkManager off
+```
 
+##Host names
+Head node = marge
+**Add backup head node later?**
+Worker nodes = lisa[01-09]
+NFS file server = wiggum
+
+Set hostname on head node. We will specify worker node hostnames in /etc/hosts
 ```
 hostname marge
 ```
 
-### CentOS accounts
+## CentOS accounts on marge
+
 user name | Pass
 ----------|-----------
 root      | 
 devans    | 
 
+MariaDB root pass same as OS root pass
 
 ## Configure network interfaces.
 ### Head node configuration
-* hostname is marge
-* network interfaces
+* 2 NICs on marge
   + eth0 connected to internet
   + eth1 connected to GigE switch to workers
-  
 
 ### Hostnames and IP addresses
-host name   | IP address
-------------|-----------
-marge       | 10.2.0.128 / LAN internal 172.10.10.2
-ringo/NFS| 10.2.0.129 / LAN internal 172.10.10.3
-n0001       | 
-n0002       | 
+host name       | IP address
+----------------|-----------
+marge           | eth0: 10.2.0.128 / eth1 (LAN internal): 172.10.10.2
+wiggum/NFS      | eth0: 10.2.0.129 / eth1 (LAN internal): 172.10.10.3
+lisa0001        | eth0: 172.10.10.4
+lisa0002        | eth0: 172.10.10.5
 
-After manually assigning IP to eth1, we edited the file below
-/etc/sysconfig/network-scripts/ifcfg-eth1
-ONBOOT="yes"
-
-
-##OS installation
-Installed CentOS 7 from USB key.
-
-To do later:
-Restrict SSH login to root and devans:
+Configure eth1 on marge.
 ```
-$ vi /etc/ssh/sshd_config
-# add following
-AllowUsers root vforget
-
-$ systemctl restart sshd
+vi /etc/sysconfig/network-scripts/ifcfg-eth1
+DEVICE=eth1
+HWADDR=xx:xx:xx:xx:xx:xx
+TYPE=Ethernet
+ONBOOT=yes
+BOOTPROTO=none
+IPV6INIT=no
+USERCTL=no
+NM_CONTROLLED=no
+PEERDNS=yes
+IPADDR=172.10.10.2
+NETMASK=255.255.255.0
 ```
-End of To do later.
 
-Disable SELinux
+Configure eth0 on marge
+```
+vi /etc/sysconfig/network-scripts/ifcfg-eth0
+DEVICE=eth1
+HWADDR=xx:xx:xx:xx:xx:xx
+TYPE=Ethernet
+ONBOOT=yes
+BOOTPROTO=none
+IPV6INIT=no
+USERCTL=no
+NM_CONTROLLED=no
+PEERDNS=yes
+IPADDR=10.2.0.128
+NETMASK=255.255.255.0
+```
+##This wasn't in the redbarn walkthrough, but was in Vince's fileserver walkthrough. Makes sense to do this, right? 
+## We are later configuring gateway and DNS in warewulf. Makes sense to do it in both places?
+Configure default gateway
+Alaric did this during OS install.
+/etc/sysconfig/network
+```{.bash}
+NETWORKING=yes
+HOSTNAME=marge
+GATEWAY=xxx.xxx.xxx.xxx
+```
+Eth0 was configed by Alaric
+Should we configure DNS servers, or leave this blank to use /etc/hosts?
+/etc/resolv.conf
+```{.bash}
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+```
+
+Ensure that network service is started
+```
+service network start
+chkconfig network on
+
+#do we need to do the 2 lines below? I don't think so. I think it's redundant with chkconfig network on. 
+#don't need to do below
+vi /etc/init.d/network restart
+ifconfig eth1
+```
+
+##Disable SELinux
 
 ```
 $ vi /etc/selinux/config
@@ -77,154 +128,96 @@ SELINUXTYPE=targeted
 
 Reboot
 
-
-
-Disable firewall
+##Install Warewulf dependencies
 
 ```
-$ systemctl disable firewalld
-$ systemctl stop firewalld
-```
+rpm -Uvh http://dl.fedoraproject.org/pub/epel/7/x86_64/e/epel-release-7-5.noarch.rpm
+#rpm -ivh would ignore errors
+yum -y update
 
-Update packages
+yum group install 'Development tools'
+yum install xinetd   # xinetd is not installed in centos 7 by default
+yum install tcpdump tftp tftp-server pigz dhcp httpd 
+yum install perl-DBD-MySQL mariadb mariadb-server perl-Term-ReadLine-Gnu mod_perl perl-CGI
+yum install libselinux-devel libacl-devel libattr-devel
+yum install ntp
+yum install cpan
+cpan Module::Build
+##this threw errors, but fixed using sudo.
+cpan DateTime
+cpan YAML
+cpan Crypt::HSXKPasswd #this isn't needed
 
-```
-yum update
-```
+yum install bonnie++
+yum install yum-utils
+yum install impitool
+yum install emacs
+yum install iperf
+yum install nfs-utils 
+yum install libnfsidmap #we changed this from nfs-utils-lib because that wasn't available on yum
+#yum install nfswatch #nfswatch not available in yum
 
-##NTP
+yum -y update
 
-```
-$ yum install ntp
-$ systemctl enable ntpd  
-$ systemctl start ntpd
-$ timedatectl set-ntp yes
-```
-
-##Networking
-
-Vince had lots of hydra-specific details
-
-Add hostname to /etc/hosts
-```
-$ cat /etc/hosts
-127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4 marge
-::1         localhost localhost.localdomain localhost6 localhost6.localdomain6 marge
-172.10.10.3 ringo
-```
-
-##NFS
-
-Install:
-```
-$ wget http://dl.fedoraproject.org/pub/epel/7/x86_64/e/epel-release-7-5.noarch.rpm
-$ rpm -Uvh epel-release-7*.rpm
-$ yum update
-$ yum install bonnie++
-$ yum install yum-utils
-$ yum install impitool
-$ yum install emacs
-$ yum install iperf
-
-$ yum install nfs-utils 
-$ yum install libnfsidmap #we changed this from nfs-utils-lib because that wasn't available on yum
-$ yum install nfswatch #we didn't install this, this package wasn't available in yum
-```
-Run on startup:
-```
-$ systemctl enable nfs-server
-$ systemctl start nfs-server
-```
-
-According to following advice, no additional services are required to run NFSv4:
-http://serverfault.com/questions/530908/nfsv4-and-rpcbind
-However, downstream Warewulf config needs rpcbind:
-
-rpcbind enables computer inter-communication
-```
-$ systemctl enable rpcbind
-$ systemctl start rpcbind
-```
-
-Deal with this later.
-Add following to /etc/exports:
-```
-/mnt/KLEINMAN_BACKUP 192.168.13.10/24(rw,async,no_subtree_check,no_root_squash)
-/mnt/KLEINMAN_SCRATCH 192.168.13.10/24(rw,async,no_subtree_check,no_root_squash)
-/mnt/GREENWOOD_BACKUP 192.168.13.10/24(rw,async,no_subtree_check,no_root_squash)
-/mnt/GREENWOOD_SCRATCH 192.168.13.10/24(rw,async,no_subtree_check,no_root_squash)
-```
-
-Load/Reload exported file systems:
-```
-$ exportfs -rv
-```
-
-On client add to /etc/fstab:
-```
-192.168.13.10:/mnt/KLEINMAN_BACKUP /mnt/KLEINMAN_BACKUP nfs defaults,async 0 0
-192.168.13.10:/mnt/GREENWOOD_BACKUP /mnt/GREENWOOD_BACKUP nfs defaults,async 0 0
-192.168.13.10:/mnt/KLEINMAN_SCRATCH /mnt/KLEINMAN_SCRATCH nfs defaults,async 0 0
-192.168.13.10:/mnt/GREENWOOD_SCRATCH /mnt/GREENWOOD_SCRATCH nfs defaults,async 0 0
-```
-
-Mount file systems:
-```
-$ mount -a
-```
-
-##Optimization
-Richard did that.
-
-```
-$ /etc/sysconfig/nfs
-RPCNFSDCOUNT=16
-```
-
-##Install a few dependencies
-```
+reboot
 
 ```
 
-
-##Install
-
-Warewulf dependencies
+## Enable tftp-server in /etc/xinetd.d/tftp.  Make sure disable = no on the fourth from the bottom line.
 
 ```
-$ yum group install 'Development tools'
-$ yum install tcpdump tftp tftp-server pigz dhcp httpd 
-$ yum install perl-DBD-MySQL mariadb mariadb-server perl-Term-ReadLine-Gnu mod_perl perl-CGI
-$ yum install libselinux-devel libacl-devel libattr-devel
-$ yum install cpan
-$ cpan Module::Build
-##this threw errors, but fixed using sudo
-$ cpan DateTime
-$ cpan YAML
-$ cpan Crypt::HSXKPasswd
-
+# default: off
+# description: The tftp server serves files using the trivial file transfer \
+# protocol. The tftp protocol is often used to boot diskless \
+# workstations, download configuration files to network-aware printers, \
+# and to start the installation process for some operating systems.
+service tftp
+{
+socket_type = dgram
+protocol = udp
+wait = yes
+user = root
+server = /usr/sbin/in.tftpd
+server_args = -s /var/lib/tftpboot
+disable = no
+per_source = 11
+cps = 100 2
+flags = IPv4
+}
 ```
 
-Reboot
-
-Start services
+##Start services, disable firewall
+Centos 7 uses firewalld instead of iptables.
+What's the difference between systemctl and chkconfig?
+1. service xinetd restart
+2. chkconfig xinetd on
+3. systemctl restart xinetd 
 
 ```
-$ systemctl enable httpd
-$ systemctl start httpd
-$ systemctl enable mariadb
-$ systemctl start mariadb
+systemctl disable firewalld
+systemctl stop firewalld
+systemctl enable httpd
+systemctl start httpd
+systemctl enable mariadb
+systemctl start mariadb
+systemctl enable ntpd  
+systemctl start ntpd
+timedatectl set-ntp yes
+systemctl enable xinetd
+systemctl restart xinetd
+
 ```
 
 Reboot, and ensure services are in proper state after reboot:
 
 ```
-$ systemctl status httpd # on 
-$ systemctl status mariadb # on
-$ systemctl status firewalld  # off
+systemctl status httpd # on 
+systemctl status mariadb # on
+systemctl status firewalld  # off
+systemctl status xinetd # on
 ```
 
-Install Warewulf
+## Install Warewulf
 
 **build_it function creates RPM build environment. First argument is where source files are located (e.g. /root/warewulf/common/), second argument is where RPMs will be built /root/rpmbuild/. Makes everything in first argument dir, then copies all warewulf files to /root/rpmbuild/SOURCES, but I don't understand the very last command rpmbuild -bb ./.spec. The command is still in /root/warewulf/common, is rpmbuild run from there? Might be nice to run the function on the first warewulf component and see where files are created. SPEC file directs rpmbuild kind of like a makefile for make.**
 
@@ -293,71 +286,190 @@ warewulf-vnfs-3.6.99-0.r1947M.el7.centos.noarch
 
 ```
 
-Configure
-
-Set NIC interface used to provision OS image
-
-**eno1? Will we use eth1? Does Vince's use of eno1 indicate he is using a different type of NIC?**
+## Configure the cluster interface (the interface marge will use to communicate with the nodes) in /etc/warewulf/provision.conf
 
 ```
-$ vi /etc/warewulf/provision.conf
-# What is the default network device that the master will use to communicate with the nodes?
-network device = eth1
-
+vi /etc/warewulf/provision.conf
+# What is the default network device that will be used to communicate to the nodes?
+network device = eth1 
 ```
 
-Enable tftp
-
-```
-$ vi /etc/xinetd.d/tftp
-# default: off
-# description: The tftp server serves files using the trivial file transfer \
-# protocol. The tftp protocol is often used to boot diskless \
-# workstations, download configuration files to network-aware printers, \
-# and to start the installation process for some operating systems. 
-service tftp
-{
-  socket_type     = dgram
-  protocol        = udp
-  wait            = yes
-  user            = root
-  server          = /usr/sbin/in.tftpd
-  server_args     = -s /var/lib/tftpboot
-  disable         = no
-  per_source      = 11
-  cps             = 100 2
-  flags           = IPv4
-}
-
-```
-
-Restart xinetd
-
-/etc/xinetd.d/tftp existed, but xinetd wasn't present, so we had to install it. Did you find that?
-
-```
-yum install xinetd
-systemctl enable xinetd
-systemctl restart xinetd
-```
-
-Setup MariaDB
+##Setup MariaDB
 **logged in as root, so ~ = /root/**
 ```
-$ vi ~/.my.cnf
+vi ~/.my.cnf
 [client]
 user = root
 password =
-$ chmod 0600 ~/.my.cnf
+Add link from Alaric
 
-$ vi /etc/warewulf/database.conf
+chmod 0600 ~/.my.cnf
+
+vi /etc/warewulf/database.conf
 user = root
 password =
 
-$ vi /etc/warewulf/database-root.conf
+vi /etc/warewulf/database-root.conf
 user = root
 password =
 ```
+## We're not setting up VNFS for now
+
+##initial setup to provision nodes
+```
+systemctl enable dhcpd
+wwinit ALL
+#ensure relevant tests are OK
+```
+
+##install pdsh
+```
+yum install libgenders
+
+wget ftp://rpmfind.net/linux/sourceforge/s/sy/sys-integrity-mgmt-platform/yum/el/7/ext/x86_64/pdsh-2.29-1el7.x86_64.rpm
+
+wget ftp://fr2.rpmfind.net/linux/sourceforge/s/sy/sys-integrity-mgmt- platform/yum/el/7/ext/x86_64/pdsh-rcmd-ssh-2.29-1el7.x86_64.rpm
+
+yum -y install pdsh-rcmd-ssh-2.29-1el7.x86_64.rpm pdsh-2.29-1el7.x86_64.rpm
+```
+
+##Configure a Warewulf node image
+Build a simple vanilla distribution of Centos into the /var/chroots/centos7 folder using yum
+```
+wwmkchroot centos7 /var/chroots/centos7
+```
+
+convert the new node OS into a VNFS (Virtual Node File System) usable by Warewulf – and build the bootstrap from our current running environment.
+```
+wwvnfs --chroot /var/chroots/centos7
+wwbootstrap `uname -r`
+```
+
+## Register each node by running wwnodescan and then booting up each node on the cluster network – and each DHCP request will be recorded and the MAC addresses stored on the Warewulf master marge.
+```
+wwsh dhcp update
+wwsh dhcp restart
+wwnodescan --netdev=eth0 --ipaddr=172.10.10.4 --netmask=255.255.255.0 --vnfs=centos7 -- bootstrap=`uname -r` lisa00[01-02]
+#Note: A range of IPs can be indicated as n00[00-02]
+#Note: netdev is the node's (Lisa's) cluster interface
+#Note: ipaddr is the first IP to be assigned to the nodes. It will increment for each new node
+```
+
+Once nodes are registered, need to update head's DHCP conf to include all of the node's MACs and IPs
+```
+wwsh dhcp update
+wwsh dhcp restart
+
+reboot
+```
+
+## SSH key
+```
+cd /root
+chmod 700 /var/chroots/centos7/root/.ssh
+ssh-keygen (use empty passphrases)
+cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+chmod 400 ~/.ssh/authorized_keys
+cp ~/.ssh/authorized_keys /var/chroots/centos7/root/.ssh/
+wwvnfs --chroot /var/chroots/centos7
+
+-- Manually reboot each node --
+```
+
+##Then should be able to ssh into nodes
+```
+ssh lisa0001
+ --answer 'yes' and exit
+ 
+ Do this for all worker nodes
+```
+
+After this, should be able to use pdsh like so:
+```
+pdsh -w lisa00[01-02]
+
+--Output--
+lisa0001: lisa0001
+lisa0002: lisa0002
+```
+
+## Hosts file
+### Add Marge's cluster NIC IP to the hosts template that will get passed to the nodes
+```
+vi /etc/warewulf/hosts-template
+127.0.0.1 localhost localhost.localdomain marge
+172.10.10.2 marge marge.mydomain.local
+```
+
+### Propogate warewulf generated /etc/hosts file to the nodes
+```
+wwsh provision set --fileadd dynamic_hosts lisa0001 lisa0002
+*Note: A range of nodes can be indicated as n00[02-19]
+
+```
+
+### Propogate warewulf generated /etc/hosts file to marge
+```
+wwsh file show dynamic_hosts > /etc/hosts
+*Note: This should be run every time new nodes are added to the cluster. A cron job is recommended...
+```
+
+##NFS
+
+Run on startup:
+```
+$ systemctl enable nfs-server
+$ systemctl start nfs-server
+```
+
+According to following advice, no additional services are required to run NFSv4:
+http://serverfault.com/questions/530908/nfsv4-and-rpcbind
+However, downstream Warewulf config needs rpcbind:
+
+rpcbind enables computer inter-communication
+```
+$ systemctl enable rpcbind
+$ systemctl start rpcbind
+```
+
+Share marge's home with all nodes
+```
+vi /etc/exports
+/home/ 10.10.10.0/255.255.255.0(rw,no_root_squash,async)
+We need to change this
+```
+
+Next is to edit the nodes’ /etc/fstab. In order to do this, we directly modify the chrooted OS we made earlier (/var/chroots/centos7):
+```
+-- /var/chroots/centos6/etc/fstab --
+#GENERATED_ENTRIES#
+tmpfs /dev/shm tmpfs defaults 0 0
+devpts /dev/pts devpts gid=5,mode=620 0 0
+sysfs /sys sysfs defaults 0 0
+proc /proc proc defaults 0 0
+10.10.10.1:/home/ /home/ nfs rw,soft,bg 0 0
+ 
+```
+
+Mount file systems:
+```
+$ mount -a
+```
+
+##Optimization
+Richard did that.
+
+```
+$ /etc/sysconfig/nfs
+RPCNFSDCOUNT=16
+```
+
+
+
+
+
+
+
 
 Setup VNFS
 **We should talk about this. Should we remove some dirs from the chroot to be nfs mounted to save RAM in the chroot? Alaric would say no, since we bought lots of RAM, but more RAM is always good.**
@@ -380,10 +492,9 @@ Install pdsh
 ```
 $ yum install libgenders
 
-$ wget ftp://rpmfind.net/linux/sourceforge/s/sy/sys-integrity-mgmt-
-platform/yum/el/7/ext/x86_64/pdsh-2.29-1el7.x86_64.rpm
+$ wget ftp://rpmfind.net/linux/sourceforge/s/sy/sys-integrity-mgmt-platform/yum/el/7/ext/x86_64/pdsh-2.29-1el7.x86_64.rpm
 
-$ wget ftp://fr2.rpmfind.net/linux/sourceforge/s/sy/sys-integrity-mgmt- platform/yum/el/7/ext/x86_64/pdsh-rcmd-ssh-2.29-1el7.x86_64.rpm
+$ wget ftp://fr2.rpmfind.net/linux/sourceforge/s/sy/sys-integrity-mgmt-platform/yum/el/7/ext/x86_64/pdsh-rcmd-ssh-2.29-1el7.x86_64.rpm
 
 yum -y install pdsh-rcmd-ssh-2.29-1el7.x86_64.rpm pdsh-2.29-1el7.x86_64.rpm
 
@@ -395,8 +506,18 @@ SSH key
 $ ssh-keygen (use empty passphrases)
 $ cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys 
 $ chmod 400 ~/.ssh/authorized_keys
-$ ssh-keygen -f ~/.ssh/identity
+$ ssh-keygen -f ~/.ssh/identity #used empty pass too
 ```
+To do later:
+Restrict SSH login to root and devans:
+```
+$ vi /etc/ssh/sshd_config
+# add following
+AllowUsers root devans
+
+$ systemctl restart sshd
+```
+End of To do later.
 
 ***
 Provision Configuration
@@ -410,7 +531,8 @@ $ wwsh -y file import /etc/shadow
 $ wwsh -y provision set --fileadd passwd,group,shadow \* 
 $ wwsh file sync \*
 # To sync files right away
-$ pdsh -w D1P-HYDRARS01 "SLEEPTIME=0 /warewulf/bin/wwgetfiles"
+#we didn't run this.
+$ pdsh -w marge "SLEEPTIME=0 /warewulf/bin/wwgetfiles"
 ```
 
 Gigabit network card
