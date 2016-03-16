@@ -362,6 +362,7 @@ wwsh dhcp restart
 
 reboot
 ```
+Your nodes should be booting successfully now. Power them on in the order you want them numbered.
 
 ## SSH key
 ```
@@ -413,6 +414,7 @@ wwsh provision set --fileadd dynamic_hosts lisa0001 lisa0002
 wwsh file show dynamic_hosts > /etc/hosts
 *Note: This should be run every time new nodes are added to the cluster. A cron job is recommended...
 ```
+
 
 ##NFS
 
