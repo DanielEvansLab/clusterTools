@@ -1,4 +1,4 @@
----
+  ---
 title: "WWmaster CentOS7 installation walkthrough"
 output: html_document
 ---
@@ -126,6 +126,10 @@ SELINUXTYPE=targeted
 
 ```
 
+TODO: add public keys
+      disable root access
+
+
 Reboot
 
 ##Install Warewulf dependencies
@@ -143,18 +147,42 @@ yum install libselinux-devel libacl-devel libattr-devel
 yum install ntp
 yum install cpan
 cpan Module::Build
+
+Warning: You do not have write permission for Perl library directories.
+
+To install modules, you need to configure a local Perl library directory or
+escalate your privileges.  CPAN can help you by bootstrapping the local::lib
+module or by configuring itself to use 'sudo' (if available).  You may also
+resolve this problem manually if you need to customize your setup.
+
+What approach do you want?  (Choose 'local::lib', 'sudo' or 'manual')
+
+chose sudo
+
+
+
+
+
 ##this threw errors, but fixed using sudo.
 cpan DateTime
 cpan YAML
 cpan Crypt::HSXKPasswd #this isn't needed
 
+Tests succeeded but one dependency not OK (File::HomeDir)
+Did not install
+
+
 yum install bonnie++
 yum install yum-utils
+already installed
 yum install impitool
+already installed
 yum install emacs
 yum install iperf
 yum install nfs-utils 
+already installed
 yum install libnfsidmap #we changed this from nfs-utils-lib because that wasn't available on yum
+already installed
 #yum install nfswatch #nfswatch not available in yum
 
 yum -y update
@@ -212,6 +240,17 @@ Reboot, and ensure services are in proper state after reboot:
 
 ```
 systemctl status httpd # on 
+
+Mar 16 18:17:52 marge.psg.net systemd[1]: Starting The Apache HTTP Server...
+Mar 16 18:17:53 marge.psg.net httpd[1210]: AH00557: httpd: apr_sockaddr_info_get() failed for marge.psg.net
+Mar 16 18:17:53 marge.psg.net httpd[1210]: AH00558: httpd: Could not reliably determine the server's full...sage
+Mar 16 18:17:53 marge.psg.net systemd[1]: Started The Apache HTTP Server.
+Hint: Some lines were ellipsized, use -l to show in full.
+
+alaric trying to add to dns.....
+still did not work...come back to this
+
+
 systemctl status mariadb # on
 systemctl status firewalld  # off
 systemctl status xinetd # on
@@ -223,56 +262,70 @@ systemctl status xinetd # on
 
 ```
 # Build Warewulf from SVN
-$ BUILD_DIR=/root/rpmbuild
-$ WW_DIR=/root/warewulf
-$ RPM_DIR=/root/rpmbuild/RPMS/
-$ function build_it { cd $1 && ./autogen.sh && make dist-gzip && make distcheck && cp -fa warewulf-*.tar.gz $2/SOURCES/ && rpmbuild -bb ./*.spec; }
+BUILD_DIR=/root/rpmbuild
+WW_DIR=/root/warewulf
+RPM_DIR=/root/rpmbuild/RPMS/
+function build_it { cd $1 && ./autogen.sh && make dist-gzip && make distcheck && cp -fa warewulf-*.tar.gz $2/SOURCES/ && rpmbuild -bb ./*.spec; }
 ```
 **Regarding h2ph command, why convert all C files to perl files in /usr/include? And where are the converted files placed? Don't worry about it.**
 **We could probably verify that perl is in /usr/local/lib64/perl5, and if not symlink it there, but let's not worry about that now**
 
 ```
-$ cd /usr/include
-$ h2ph -al * sys/*
+cd /usr/include
+h2ph -al * sys/*
 # Warning from h2ph: Destination directory /usr/local/lib64/perl5 doesn't exist or isn't a directory
 #we didn't see that warning.
-$ mkdir -p $BUILD_DIR/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-$ mkdir /root/warewulf
+mkdir -p $BUILD_DIR/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+mkdir /root/warewulf
 ```
 **downlaod to /root/warewulf. Why is echo p piped to svn? Who cares.**
 ```
-$ echo p | svn co https://warewulf.lbl.gov/svn/trunk/ /root/warewulf 
+echo p | svn co https://warewulf.lbl.gov/svn/trunk/ /root/warewulf 
 #checked out revision 1962
-$ build_it $WW_DIR/common $BUILD_DIR
-$ yum install -y $RPM_DIR/noarch/warewulf-common-*.rpm
-$ build_it $WW_DIR/provision $BUILD_DIR
-$ yum install -y $RPM_DIR/x86_64/warewulf-provision-*.rpm
-$ build_it $WW_DIR/cluster $BUILD_DIR
-$ yum install -y $RPM_DIR/x86_64/warewulf-cluster-*.rpm
+build_it $WW_DIR/common $BUILD_DIR
+yum install -y $RPM_DIR/noarch/warewulf-common-*.rpm
+build_it $WW_DIR/provision $BUILD_DIR
+yum install -y $RPM_DIR/x86_64/warewulf-provision-*.rpm
+build_it $WW_DIR/cluster $BUILD_DIR
+yum install -y $RPM_DIR/x86_64/warewulf-cluster-*.rpm
 ## remove debian.tmpl from Makefil* in vnfs/libexec/wwmkchroot
-$ sed -i 's+debian.tmpl+ +g' $WW_DIR/vnfs/libexec/wwmkchroot/Makefil* 
-$ build_it $WW_DIR/vnfs $BUILD_DIR
-$ yum install -y $RPM_DIR/noarch/warewulf-vnfs-*.rpm
+sed -i 's+debian.tmpl+ +g' $WW_DIR/vnfs/libexec/wwmkchroot/Makefil* 
+build_it $WW_DIR/vnfs $BUILD_DIR
+yum install -y $RPM_DIR/noarch/warewulf-vnfs-*.rpm
+
 ```
 **Symlinks and dependencies needed to build monitor component?**
 **What do the different warewulf components do? I'll RTFM**
 ```
 # monitor
-$ ln -s /usr/lib64/libjson.so.0 /usr/lib64/libjson.so
-$ ln -s /usr/lib64/libjson-c.so.2 /usr/lib64/libjson-c.so 
-$ ln -s /usr/lib64/libsqlite3.so.0 /usr/lib64/libsqlite3.so 
-$ yum -y install json-c-devel json-devel sqlite-devel
-$ build_it $WW_DIR/monitor $BUILD_DIR
-$ yum -y install $RPM_DIR/x86_64/warewulf-monitor-0*.rpm
+ln -s /usr/lib64/libjson.so.0 /usr/lib64/libjson.so
+ln -s /usr/lib64/libjson-c.so.2 /usr/lib64/libjson-c.so 
+ln -s /usr/lib64/libsqlite3.so.0 /usr/lib64/libsqlite3.so 
+yum -y install json-c-devel json-devel sqlite-devel
+build_it $WW_DIR/monitor $BUILD_DIR
+yum -y install $RPM_DIR/x86_64/warewulf-monitor-0*.rpm
 ```
 **Line added by Vince below**
 ```
-$ yum -y install $RPM_DIR/x86_64/warewulf-monitor-cl*.rpm # Added by Vince Forgetta
-$ yum -y install $RPM_DIR/x86_64/warewulf-monitor-node*.rpm
+yum -y install $RPM_DIR/x86_64/warewulf-monitor-cl*.rpm # Added by Vince Forgetta
+yum -y install $RPM_DIR/x86_64/warewulf-monitor-node*.rpm
 # build_it $WW_DIR/ipmi $BUILD_DIR
 # yum -y install $RPM_DIR/x86_64/warewulf-ipmi*.rpm
-$ rpm -qa | grep warewulf 
+rpm -qa | grep warewulf 
 #output of grep command should be below. Checking that all RPMs are built.
+
+our output should match the one below
+warewulf-cluster-node-3.6.99-0.r1954.el7.centos.x86_64
+warewulf-provision-3.6.99-0.r1960.el7.centos.x86_64
+warewulf-provision-gpl_sources-3.6.99-0.r1960.el7.centos.x86_64
+warewulf-vnfs-3.6.99-0.r1960.el7.centos.noarch
+warewulf-monitor-0.0.1-0.r1939.el7.centos.x86_64
+warewulf-common-3.6.99-0.r1962.el7.centos.noarch
+warewulf-provision-server-3.6.99-0.r1960.el7.centos.x86_64
+warewulf-monitor-cli-0.0.1-0.r1939.el7.centos.x86_64
+warewulf-common-localdb-3.6.99-0.r1962.el7.centos.noarch
+warewulf-monitor-node-0.0.1-0.r1939.el7.centos.x86_64
+warewulf-cluster-3.6.99-0.r1954.el7.centos.x86_64
 
 warewulf-cluster-3.6.99-0.r1933.el7.centos.x86_64 
 warewulf-cluster-node-3.6.99-0.r1933.el7.centos.x86_64 
@@ -309,6 +362,9 @@ vi /etc/warewulf/database.conf
 user = root
 password =
 
+NOTE:  user = wwuser was already there...is wwuser special?
+
+
 vi /etc/warewulf/database-root.conf
 user = root
 password =
@@ -328,7 +384,7 @@ yum install libgenders
 
 wget ftp://rpmfind.net/linux/sourceforge/s/sy/sys-integrity-mgmt-platform/yum/el/7/ext/x86_64/pdsh-2.29-1el7.x86_64.rpm
 
-wget ftp://fr2.rpmfind.net/linux/sourceforge/s/sy/sys-integrity-mgmt- platform/yum/el/7/ext/x86_64/pdsh-rcmd-ssh-2.29-1el7.x86_64.rpm
+wget ftp://fr2.rpmfind.net/linux/sourceforge/s/sy/sys-integrity-mgmt-platform/yum/el/7/ext/x86_64/pdsh-rcmd-ssh-2.29-1el7.x86_64.rpm
 
 yum -y install pdsh-rcmd-ssh-2.29-1el7.x86_64.rpm pdsh-2.29-1el7.x86_64.rpm
 ```
@@ -343,17 +399,53 @@ convert the new node OS into a VNFS (Virtual Node File System) usable by Warewul
 ```
 wwvnfs --chroot /var/chroots/centos7
 wwbootstrap `uname -r`
+
+Number of drivers included in bootstrap: 447
+depmod: WARNING: could not open /var/tmp/wwinitrd.sne6ea2IAnjM/initramfs/lib/modules/3.10.0-327.10.1.el7.x86_64/modules.order: No such file or directory
+depmod: WARNING: could not open /var/tmp/wwinitrd.sne6ea2IAnjM/initramfs/lib/modules/3.10.0-327.10.1.el7.x86_64/modules.builtin: No such file or directory
+Number of firmware images included in bootstrap: 93
+Building and compressing bootstrap
+
 ```
 
 ## Register each node by running wwnodescan and then booting up each node on the cluster network – and each DHCP request will be recorded and the MAC addresses stored on the Warewulf master marge.
 ```
 wwsh dhcp update
 wwsh dhcp restart
+
+Restarting the DHCP service
+ERROR:  
+ERROR:  
+Done.
+
+
+
 wwnodescan --netdev=eth0 --ipaddr=172.10.10.4 --netmask=255.255.255.0 --vnfs=centos7 -- bootstrap=`uname -r` lisa00[01-02]
 #Note: A range of IPs can be indicated as n00[00-02]
 #Note: netdev is the node's (Lisa's) cluster interface
 #Note: ipaddr is the first IP to be assigned to the nodes. It will increment for each new node
 ```
+Output with errors is:
+WARNING:  Auto-detected "bootstrap=3", cluster "10", domain "0-327.10.1.el7.x86_64"
+ERROR:  Invalid value for Warewulf::Node->nodename:  "bootstrap=3"
+Use of uninitialized value $name in concatenation (.) or string at /usr/share/perl5/vendor_perl/Warewulf/Provision.pm line 139.
+Use of uninitialized value $name in concatenation (.) or string at /usr/share/perl5/vendor_perl/Warewulf/Provision.pm line 139.
+Use of uninitialized value $name in concatenation (.) or string at /usr/share/perl5/vendor_perl/Warewulf/Provision.pm line 139.
+ERROR:  There was an error restarting the DHCPD server
+Added to data store:  bootstrap=3:  172.10.10.4/255.255.255.0/84:2b:2b:52:66:e0
+ERROR:  Node name "lisa0001" contains unparseable dotted notation.  Removing all suffixes.
+WARNING:  Auto-detected "lisa0001", cluster "", domain ""
+ERROR:  There was an error restarting the DHCPD server
+Added to data store:  lisa0001:  172.10.10.5/255.255.255.0/84:2b:2b:52:5e:a1
+(command is still running)
+
+systemctl restart dhcpd  via vince in google groups
+
+now no more errors....
+
+still need to ctrl-c to get out
+
+
 
 Once nodes are registered, need to update head's DHCP conf to include all of the node's MACs and IPs
 ```
@@ -383,6 +475,11 @@ ssh lisa0001
  --answer 'yes' and exit
  
  Do this for all worker nodes
+
+[root@marge ~]# ssh lisa0001
+ssh: connect to host lisa0001 port 22: Connection refused
+
+
 ```
 
 After this, should be able to use pdsh like so:
