@@ -147,7 +147,10 @@ yum install libselinux-devel libacl-devel libattr-devel
 yum install ntp
 yum install cpan
 cpan Module::Build
+```
 
+We received this error after cpan Module::Build
+```
 Warning: You do not have write permission for Perl library directories.
 
 To install modules, you need to configure a local Perl library directory or
@@ -156,33 +159,28 @@ module or by configuring itself to use 'sudo' (if available).  You may also
 resolve this problem manually if you need to customize your setup.
 
 What approach do you want?  (Choose 'local::lib', 'sudo' or 'manual')
-
-chose sudo
-
-
+```
+We chose sudo, and it seemed to resolve the problem.
 
 
-
-##this threw errors, but fixed using sudo.
+Continue installing warewulf dependencies
+```
 cpan DateTime
 cpan YAML
 cpan Crypt::HSXKPasswd #this isn't needed
+```
 
 Tests succeeded but one dependency not OK (File::HomeDir)
-Did not install
+Did not install this dependency and just continued without HSXKPasswd.
 
-
+```
 yum install bonnie++
 yum install yum-utils
-already installed
-yum install impitool
-already installed
+yum install impitool 
 yum install emacs
 yum install iperf
-yum install nfs-utils 
-already installed
+yum install nfs-utils  
 yum install libnfsidmap #we changed this from nfs-utils-lib because that wasn't available on yum
-already installed
 #yum install nfswatch #nfswatch not available in yum
 
 yum -y update
@@ -217,9 +215,6 @@ flags = IPv4
 ##Start services, disable firewall
 Centos 7 uses firewalld instead of iptables.
 What's the difference between systemctl and chkconfig?
-1. service xinetd restart
-2. chkconfig xinetd on
-3. systemctl restart xinetd 
 
 ```
 systemctl disable firewalld
@@ -241,16 +236,18 @@ Reboot, and ensure services are in proper state after reboot:
 ```
 systemctl status httpd # on 
 
+```
+
+##Issues with apache. What's going on?
 Mar 16 18:17:52 marge.psg.net systemd[1]: Starting The Apache HTTP Server...
 Mar 16 18:17:53 marge.psg.net httpd[1210]: AH00557: httpd: apr_sockaddr_info_get() failed for marge.psg.net
 Mar 16 18:17:53 marge.psg.net httpd[1210]: AH00558: httpd: Could not reliably determine the server's full...sage
 Mar 16 18:17:53 marge.psg.net systemd[1]: Started The Apache HTTP Server.
 Hint: Some lines were ellipsized, use -l to show in full.
 
-alaric trying to add to dns.....
-still did not work...come back to this
+alaric trying to add to dns.....still did not work...come back to this
 
-
+```
 systemctl status mariadb # on
 systemctl status firewalld  # off
 systemctl status xinetd # on
@@ -306,6 +303,7 @@ build_it $WW_DIR/monitor $BUILD_DIR
 yum -y install $RPM_DIR/x86_64/warewulf-monitor-0*.rpm
 ```
 **Line added by Vince below**
+We did not install WW ipmi
 ```
 yum -y install $RPM_DIR/x86_64/warewulf-monitor-cl*.rpm # Added by Vince Forgetta
 yum -y install $RPM_DIR/x86_64/warewulf-monitor-node*.rpm
@@ -314,18 +312,19 @@ yum -y install $RPM_DIR/x86_64/warewulf-monitor-node*.rpm
 rpm -qa | grep warewulf 
 #output of grep command should be below. Checking that all RPMs are built.
 
-our output should match the one below
+our output should match Vince's list below
+warewulf-cluster-3.6.99-0.r1954.el7.centos.x86_64
 warewulf-cluster-node-3.6.99-0.r1954.el7.centos.x86_64
+warewulf-common-3.6.99-0.r1962.el7.centos.noarch
+warewulf-common-localdb-3.6.99-0.r1962.el7.centos.noarch
+warewulf-monitor-0.0.1-0.r1939.el7.centos.x86_64
+warewulf-monitor-cli-0.0.1-0.r1939.el7.centos.x86_64
+warewulf-monitor-node-0.0.1-0.r1939.el7.centos.x86_64
 warewulf-provision-3.6.99-0.r1960.el7.centos.x86_64
 warewulf-provision-gpl_sources-3.6.99-0.r1960.el7.centos.x86_64
-warewulf-vnfs-3.6.99-0.r1960.el7.centos.noarch
-warewulf-monitor-0.0.1-0.r1939.el7.centos.x86_64
-warewulf-common-3.6.99-0.r1962.el7.centos.noarch
 warewulf-provision-server-3.6.99-0.r1960.el7.centos.x86_64
-warewulf-monitor-cli-0.0.1-0.r1939.el7.centos.x86_64
-warewulf-common-localdb-3.6.99-0.r1962.el7.centos.noarch
-warewulf-monitor-node-0.0.1-0.r1939.el7.centos.x86_64
-warewulf-cluster-3.6.99-0.r1954.el7.centos.x86_64
+warewulf-vnfs-3.6.99-0.r1960.el7.centos.noarch
+
 
 warewulf-cluster-3.6.99-0.r1933.el7.centos.x86_64 
 warewulf-cluster-node-3.6.99-0.r1933.el7.centos.x86_64 
@@ -350,6 +349,23 @@ network device = eth1
 ##Setup MariaDB
 **logged in as root, so ~ = /root/**
 ```
+#set mysql root pass
+#http://www.liberiangeek.net/2014/10/reset-root-password-mariadb-centos-7/
+sudo systemctl stop mariadb.service
+sudo service mariadb stop
+sudo mysqld_safe --skip-grant-tables --skip-networking &
+mysql -u root
+use mysql;
+update user set password=PASSWORD("new-password") where User='root';
+flush privileges;
+exit;
+
+#stop mariadb
+systemctl stop mariadb.service
+
+#start mariaDB
+systemctl start mariadb.service
+
 vi ~/.my.cnf
 [client]
 user = root
@@ -391,7 +407,9 @@ yum -y install pdsh-rcmd-ssh-2.29-1el7.x86_64.rpm pdsh-2.29-1el7.x86_64.rpm
 
 ##Configure a Warewulf node image
 Build a simple vanilla distribution of Centos into the /var/chroots/centos7 folder using yum
+wwmkchroot was expecting a template file to be named exactly centos-7.tmpl, so we issued the copy command below
 ```
+cp /usr/libexec/warewulf/wwmkchroot/centos-7.tmpl usr/libexec/warewulf/wwmkchroot/centos7.tmpl
 wwmkchroot centos7 /var/chroots/centos7
 ```
 
@@ -411,15 +429,23 @@ Building and compressing bootstrap
 ## Register each node by running wwnodescan and then booting up each node on the cluster network – and each DHCP request will be recorded and the MAC addresses stored on the Warewulf master marge.
 ```
 wwsh dhcp update
+```
+
+The wwsh dhcp restart command reported the error below. 
+```
 wwsh dhcp restart
 
 Restarting the DHCP service
 ERROR:  
 ERROR:  
 Done.
+```
+Vince also reported this error on the warewulf google group, and there was no fix. A workaround is to simply restart dhcpd.
+```
+systemctl restart dhcpd
+```
 
-
-
+```
 wwnodescan --netdev=eth0 --ipaddr=172.10.10.4 --netmask=255.255.255.0 --vnfs=centos7 -- bootstrap=`uname -r` lisa00[01-02]
 #Note: A range of IPs can be indicated as n00[00-02]
 #Note: netdev is the node's (Lisa's) cluster interface
@@ -439,7 +465,6 @@ ERROR:  There was an error restarting the DHCPD server
 Added to data store:  lisa0001:  172.10.10.5/255.255.255.0/84:2b:2b:52:5e:a1
 (command is still running)
 
-systemctl restart dhcpd  via vince in google groups
 
 now no more errors....
 
