@@ -1,4 +1,4 @@
-  ---
+---
 title: "WWmaster CentOS7 installation walkthrough"
 output: html_document
 ---
@@ -189,7 +189,7 @@ reboot
 
 ```
 
-## Enable tftp-server in /etc/xinetd.d/tftp.  Make sure disable = no on the fourth from the bottom line.
+## Enable tftp-server in /etc/xinetd.d/tftp.  Make sure disable = no on the fourth line from the bottom.
 
 ```
 # default: off
@@ -446,7 +446,7 @@ systemctl restart dhcpd
 ```
 
 ```
-wwnodescan --netdev=eth0 --ipaddr=172.10.10.4 --netmask=255.255.255.0 --vnfs=centos7 -- bootstrap=`uname -r` lisa00[01-02]
+wwnodescan --netdev=eth0 --ipaddr=172.10.10.4 --netmask=255.255.255.0 --vnfs=centos7 -- bootstrap=`uname -r` lisa0001
 #Note: A range of IPs can be indicated as n00[00-02]
 #Note: netdev is the node's (Lisa's) cluster interface
 #Note: ipaddr is the first IP to be assigned to the nodes. It will increment for each new node
