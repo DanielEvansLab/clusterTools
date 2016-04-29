@@ -458,6 +458,10 @@ ganglia server is responding but getting - error collecting ganglia data  port 8
 
 selinux was reenabled..... not sure why. Once disabled again, it worked.
 
+#Munge!!!!
+We created var/log/munge on chroot, but then it wasn't on the nodes! Looks like it's being excluded.
+vi etc/warewulf/vnfs.conf
+Comment out the line about excluding /var/log. We need this in the nodes vnfs. 
 
 
 
