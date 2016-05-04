@@ -620,6 +620,17 @@ server 1.rhel.pool.ntp.org
 server 2.rhel.pool.ntp.org
 ```
 
+Do I also have to add a restrict line under each server?
+
+Also want to restrict the hosts that can query our ntpd to only include hosts on our subnet. This is Dan's experimental code...
+```
+vi /etc/ntpd.conf
+restrict default limited kod nomodify notrap nopeer noquery
+restrict 127.0.0.1
+
+
+```
+
 This means the master node is using three external sources for synchronizing clocks. To check this, you can simply use the ntpq command along with the lpeers option:
 ```
 ntpq
