@@ -364,6 +364,10 @@ come back to this once we have the drives.....
 
 #Installing Ganglia
 This procedure assumes that you have installed the EPEL repo on both the master and nodes, as described in Section 3: Installing Warewulf
+
+Also see:
+https://github.com/ganglia/monitor-core/wiki/Ganglia-Quick-Start
+
 1. Using yum, install the ganglia binaries on the master node:
 ```
 yum install -y ganglia*
@@ -587,6 +591,101 @@ NOTE – make sure your clocks are synced (or at least very close) or munge will
 ```
 
 ##We stopped here##
+
+#NTP
+http://www.cyberciti.biz/faq/rhel-fedora-centos-configure-ntp-client-server/
+
+Also on Jeff Layton's HPC-mag article.
+The next package to install is ntp. NTP is a way for clocks on disparate nodes to synchronize to each other. This aspect is important for clusters because, if the clocks are too skewed relative to each other, the application might have problems. You need to install ntp on both the master node and the VNFS, but start by installing it on the master node.
+
+```
+yum install ntp
+```
+
+Configuring NTP on the master node isn’t too difficult and might not require anything more than making sure it starts when the node is rebooted. To do this, first make sure NTP is running on the master node after being installed and that it starts when the master node is rebooted (this process should be familiar to you by now):
+
+```
+chkconfig --list | grep ntpd
+chkconfig ntpd on
+chkconfig --list | grep ntpd
+service ntpd restart
+```
+
+I used the install defaults on Scientific Linux 6.2 on my test system. The file /etc/ntp.conf defines the NTP configuration, with three important lines that point to external servers for synchronizing the clock of the master node:
+```
+# Use public servers from the pool.ntp.org project.
+# Please consider joining the pool (http://www.pool.ntp.org/join.html). 
+server 0.rhel.pool.ntp.org                 
+server 1.rhel.pool.ntp.org             
+server 2.rhel.pool.ntp.org
+```
+
+This means the master node is using three external sources for synchronizing clocks. To check this, you can simply use the ntpq command along with the lpeers option:
+```
+ntpq
+ntpq> lpeers
+     remote           refid      st t when poll reach   delay   offset  jitter
+==============================================================================
+ 10504.x.rootbsd 198.30.92.2      2 u   27   64    3   40.860  141.975   4.746
+ wwwco1test12.mi 64.236.96.53     2 u   24   64    3  106.821  119.694   4.674
+ mail.ggong.info 216.218.254.202  2 u   25   64    3   98.118  145.902   4.742
+ ntpq> quit
+```
+
+The output indicates that the master node is syncing time with three different servers on the Internet. Knowing how to point NTP to a particular server will be important for configuring the VNFS.
+
+The next step is to install NTP into the chroot environment that is the basis for the VNFS (again, with Yum). Yum is flexible enough that you can tell it the root location where you want it installed. This works perfectly with the chroot environment:
+```
+yum --tolerant --installroot /var/chroots/centos6 -y install ntp
+```
+
+Now that NTP is installed into the chroot, you just need to configure it by editing the etc/ntp.conf file that is in the chroot. For the example, in this article, the full path to the file is /var/chroots/centos6/etc/ntp.conf. The file should look like this,
+```
+# For more information about this file, see the man pages
+# ntp.conf(5), ntp_acc(5), ntp_auth(5), ntp_clock(5), ntp_misc(5), ntp_mon(5).
+
+#driftfile /var/lib/ntp/drift
+
+restrict default ignore
+restrict 127.0.0.1
+server 172.10.10.2
+restrict 172.10.10.2 nomodify
+```
+where 172.10.10.2 is the IP address of the master node. (It uses the private cluster network.)
+
+To get NTP ready to run on the compute nodes, you have one more small task. When ntp is installed into the chroot, it is not configured to start automatically, so you need to force it to run. A simple way to do this is to put the commands into the etc/rc.d/rc.local file in the chroot. For this example, the full path to the file is /var/chroots/centos6/etc/rc.d/rc.local and should look as follows:
+```
+#!/bin/sh
+#
+# This script will be executed *after* all the other init scripts.
+# You can put your own initialization stuff in here if you don't
+# want to do the full Sys V style init stuff.
+
+touch /var/lock/subsys/local
+
+chkconfig ntpd on
+service ntpd start
+```
+
+Although you probably have better, more elegant ways to do this, I chose to do it this way for the sake of expediency.
+
+Now ntp is installed and configured in the chroot environment, but because it has changed, you now have to rebuild the VNFS for the compute nodes. 
+```
+wwnvfs --chroot /var/chroots/centos6
+pdsh -w lisa00[01-04] reboot
+```
+
+Check that ntp is working on each node.
+```
+ssh lisa0001
+ntpq
+ntpq> lpeers
+     remote           refid      st t when poll reach   delay   offset  jitter
+==============================================================================
+ 172.10.10.2      .STEP.          16 u    2   64    0    0.000    0.000   0.000
+ntpq> quit
+```
+
 
 2. Install SLURM on master
 To build RPMs directly, copy the distributed tar-ball into a directory and execute rpmbuild -ta slurm-14.03.9.tar.bz2 with the appropriate Slurm version number. The rpm file will be installed under the $(HOME)/rpmbuild directory of the user building them. 
