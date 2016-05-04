@@ -394,12 +394,12 @@ host {
 }
 /* Feel free to specify as many udp_send_channels as you like. Gmond used to only support having a single channel */
 udp_send_channel {
-  host = marge
+  host = marge ##edit this
   port = 8649
 }
 /* You can specify as many udp_recv_channels as you like as well. */ 
 udp_recv_channel {
-  port = 8649
+  port = 8649 ##edit this
 }
 /* You can specify as many tcp_accept_channels as you like to share an xml description of the state of the cluster */
 tcp_accept_channel {
@@ -458,12 +458,429 @@ ganglia server is responding but getting - error collecting ganglia data  port 8
 
 selinux was reenabled..... not sure why. Once disabled again, it worked.
 
-#Munge!!!!
-We created var/log/munge on chroot, but then it wasn't on the nodes! Looks like it's being excluded.
+#Installing OpenMPI
+This procedure assumes that you have installed the EPEL repo on both the master and nodes, as described in Section 2: Installing Warewulf. We also assume that you are using a Gigabit network, and not Infiniband. This can be done, but is not detailed here.
+
+1. Get the needed files from openmpi.org
+```
+cd ~
+wget http://www.open-mpi.org/software/ompi/v1.4/downloads/openmpi-1.4.5.tar.gz
+wget http://svn.open-mpi.org/svn/ompi/branches/v1.4/contrib/dist/linux/buildrpm.sh 
+wget http://svn.open-mpi.org/svn/ompi/branches/v1.4/contrib/dist/linux/openmpi.spec
+```
+
+2. Make sure the buildrpm.sh script is executable.
+```
+chmod +x buildrpm.sh
+```
+
+3. For some strange reason Centos 6.x does not give you a default RPM-building environment. You must create one yourself. Logged in as root, issue these commands:
+```
+cd ~
+mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS} 
+echo '%_topdir /root/rpmbuild' > ~/.rpmmacros
+```
+
+4. Edit the buildrpm.sh file so that it will build a single rpm file (changes in hash marks).
+```
+vi ~/buildrpm.sh – (Lines 33-41)
+Note that this script can build one or all of the following RPMs: 
+SRPM, all-in-one, multiple.
+#If you want to build the SRPM, put "yes" here 
+build_srpm=${build_srpm:-"yes"}
+#If you want to build the "all in one RPM", put "yes" here 
+build_single=${build_single:-"yes"}  #make this yes
+#If you want to build the "multiple" RPMs, put "yes" here 
+build_multiple=${build_multiple:-"no"}
+```
+
+Note: Optimally, I would prefer to build with the multiple RPMs option and just install the openmpi-runtime package on the nodes – to reduce VNFS size, but that has given me some compilation errors I have not been able to fix. Please feel free to send me any advice on this topic.
+
+5. Build the RPM (this will take awhile)
+```
+./buildrpm.sh openmpi-1.4.5.tar.gz
+```
+
+6. Install the new RPM on the master.
+```
+rpm -ivh /root/rpmbuild/RPMS/x86_64/openmpi-1.4.5-2.x86_64.rpm
+```
+
+7. Install the new RPM on the nodes
+```
+yum --installroot /var/chroots/centos6 install /root/rpmbuild/RPMS/x86_64/openmpi- 1.4.5-2.x86_64.rpm
+```
+
+8. Rebuild VNFS and reboot nodes.
+```
+wwvnfs --chroot /var/chroots/centos6
+pdsh -w n00[00-99] reboot
+```
+
+#SLURM install, and Munge!!!!
+This procedure assumes that you have installed the EPEL repos on both the master and nodes, as described in Section 2: Installing Warewulf.
+
+1. We will be using Munge for authentication, so it must be configured and installed before SLURM.
+Add the munge and slurm users
+```
+useradd munge
+useradd slurm
+```
+
+Find the new users’ entries in /etc/passwd, and change the homedir and shell: (changes followed by hash marks). UID and GID are likely different on our system. 
+```
+vi /etc/passwd
+munge:x:502:502::/home/munge:/sbin/nologin 
+slurm:x:503:503::/home/slurm:/sbin/nologin
+```
+
+Sync the users to the nodes.
+```
+wwsh file import /etc/passwd
+wwsh file import /etc/group
+```
+
+Install munge.
+```
+yum install munge munge-devel
+```
+
+Create the authentication key for use with Munge
+```
+dd if=/dev/urandom bs=1 count=1024 >/etc/munge/munge.key
+#red barn lists the line below too, but seems redundant with first line. We only ran first line.
+#echo -n "foo" | sha1sum | cut -d' ' -f1 >/etc/munge/munge.key //(where foo is your password)
+chown munge.munge /etc/munge/munge.key
+chmod 400 /etc/munge/munge.key
+/etc/init.d/munge start
+chkconfig munge on
+```
+
+Copy the authentication key to the nodes, then reboot nodes.
+```
+yum --installroot=/var/chroots/centos6 install munge 
+chroot /var/chroots/centos6
+chkconfig munge on
+exit
+cp -p /etc/munge/munge.key /var/chroots/centos6/etc/munge/munge.key 
+chown -R munge.munge /var/chroots/centos6/etc/munge
+chown -R munge.munge /var/chroots/centos6/var/log/munge
+chown -R munge.munge /var/chroots/centos6/var/lib/munge
+mv /var/chroots/centos6/etc/rc3.d/S40munge /var/chroots/centos6/etc/rc3.d/S96munge
+```
+
+var/log/munge was created in the chroot, but then it wasn't on the nodes! Looks like it's being excluded.
 vi etc/warewulf/vnfs.conf
-Comment out the line about excluding /var/log. We need this in the nodes vnfs. 
+Comment out the line about excluding /var/log. We need this directory in the nodes vnfs. After removing this excludes line, everything worked well. 
+
+Rebuild the VNFS and reboot the nodes.
+```
+wwvnfs --chroot /var/chroots/centos6
+pdsh -w n00[00-99] reboot
+```
+
+Test munge with the following commands:
+```
+munge -n | unmunge                // test locally
+munge -n | ssh n0000 unmunge      // test remotely
+NOTE – make sure your clocks are synced (or at least very close) or munge will report an error
+```
+
+##We stopped here##
+
+2. Install SLURM on master
+To build RPMs directly, copy the distributed tar-ball into a directory and execute rpmbuild -ta slurm-14.03.9.tar.bz2 with the appropriate Slurm version number. The rpm file will be installed under the $(HOME)/rpmbuild directory of the user building them. 
+
+```
+#wget http://www.schedmd.com/download/archive/slurm-2.3.4.tar.bz2 
+#newest version is 15.08.11, but doesn't seem to be available via wget. Download using GUI browser then copy to marge?
+yum install readline-devel openssl-devel pam-devel
+rpmbuild -ta slurm*.tar.bz2
+cd ~/rpmbuild/RPMS/x86_64
+yum install slurm-2.3.4-1.el6.x86_64.rpm slurm-devel-2.3.4-1.el6.x86_64.rpm slurm- plugins-2.3.4-1.el6.x86_64.rpm slurm-munge-2.3.4-1.el6.x86_64.rpm
+```
+
+3. Generate your config file. You can do this by going to
+https://computing.llnl.gov/linux/slurm/configurator.html
+and saving the result to /etc/slurm/slurm.conf However, here is my conf file for your convenience:
+
+Please note you may need to adjust the Sockets and CoresPerSocket parameters based on your hardware configuration. Also, please note that the last two lines in the file begin with “NodeName” and “PartitionName” respectively. I don’t want the word wrap to make you think there should be line breaks where there shouldn’t be).
+
+```
+vi /etc/slurm/slurm.conf
+#
+# Example slurm.conf file. Please run configurator.html
+# (in doc/html) to build a configuration file customized # for your environment.
+#
+#
+# slurm.conf file generated by configurator.html. 
+#
+# See the slurm.conf man page for more information. 
+#
+ClusterName=Warewulf ##this is the cluster name we specified in ganglia conf files.
+ControlMachine=marge
+ControlAddr=172.10.10.2
+#BackupController=
+#BackupAddr=
+#
+SlurmUser=slurm
+#SlurmdUser=root
+SlurmctldPort=6817
+SlurmdPort=6818
+AuthType=auth/munge
+#JobCredentialPrivateKey= 
+#JobCredentialPublicCertificate= 
+StateSaveLocation=/tmp
+SlurmdSpoolDir=/tmp/slurmd
+SwitchType=switch/none
+MpiDefault=none 
+SlurmctldPidFile=/var/run/slurmctld.pid 
+SlurmdPidFile=/var/run/slurmd.pid 
+ProctrackType=proctrack/pgid
+#PluginDir=
+CacheGroups=0
+#FirstJobId=
+ReturnToService=0
+#MaxJobCount=
+#PlugStackConfig=
+#PropagatePrioProcess=
+#PropagateResourceLimits= 
+#PropagateResourceLimitsExcept=
+#Prolog=
+#Epilog=
+#SrunProlog=
+#SrunEpilog=
+#TaskProlog=
+#TaskEpilog=
+#TaskPlugin=
+#TrackWCKey=no
+#TreeWidth=50
+#TmpFs=
+#UsePAM=
+#
+# TIMERS
+SlurmctldTimeout=300
+SlurmdTimeout=300
+InactiveLimit=0
+MinJobAge=300
+KillWait=30
+Waittime=0
+#
+# SCHEDULING
+SchedulerType=sched/backfill
+#SchedulerAuth=
+#SchedulerPort=
+#SchedulerRootFilter=
+SelectType=select/linear
+FastSchedule=1
+#PriorityType=priority/multifactor 
+#PriorityDecayHalfLife=14-0
+#PriorityUsageResetPeriod=14-0
+#PriorityWeightFairshare=100000
+#PriorityWeightAge=1000
+#PriorityWeightPartition=10000
+#PriorityWeightJobSize=1000
+#PriorityMaxAge=1-0
+#
+# LOGGING
+SlurmctldDebug=3
+#SlurmctldLogFile=
+SlurmdDebug=3
+#SlurmdLogFile=
+JobCompType=jobcomp/none
+#JobCompLoc=
+#
+# ACCOUNTING
+#JobAcctGatherType=jobacct_gather/linux
+#JobAcctGatherFrequency=30
+#
+#AccountingStorageType=accounting_storage/slurmdbd
+#AccountingStorageHost=
+#AccountingStorageLoc=
+#AccountingStoragePass=
+#AccountingStorageUser=
+#
+# COMPUTE NODES
+NodeName=lisa00[01-16] Sockets=2 CoresPerSocket=6 ThreadsPerCore=2 State=UNKNOWN PartitionName=allnodes Nodes=lisa00[00-16] Default=YES MaxTime=INFINITE State=UP
+#ALL OF THE NODES ABOVE MUST BE RESOLVABLE OR ELSE SLURM WILL NOT START!
+```
+
+4. Start Slurm and configure to start automatically each boot
+```
+/etc/init.d/slurm start
+chkconfig slurm on
+```
+
+5. Install Slurm and configure it to start automatically on the nodes.
+```
+cd ~/rpmbuild/RPMS/x86_64
+#use the right slurm version
+yum --installroot=/var/chroots/centos6 install slurm-2.3.4-1.el6.x86_64.rpm slurm- plugins-2.3.4-1.el6.x86_64.rpm slurm-munge-2.3.4-1.el6.x86_64.rpm
+cp -p /etc/slurm/slurm.conf /var/chroots/centos6/etc/slurm/slurm.conf 
+chroot /var/chroots/centos6
+chkconfig slurm on
+mv /etc/rc3.d/S90slurm /etc/rc3.d/S97slurm
+exit
+```
+
+6. Rebuild VNFS, reboot nodes
+```
+wwvnfs --chroot /var/chroots/centos6
+pdsh –w n00[00-99] reboot
+```
+
+7. Check that slurm sees the nodes
+```
+scontrol show nodes
+-- If nodes’ state shows as DOWN, run the following: --
+scontrol update NodeName=ClusterNode0 State=Resume 
+scontrol show nodes
+```
 
 
+#Install HPL Benchmark
+This procedure assumes that you have installed the EPEL repo on both the master and nodes, as described in Section 2: Installing Warewulf.
+
+1. Install the following Linear Algebra libraries and HPL prereqs on the master.
+```
+yum install atlas atlas-devel blas blas-devel lapack lapack-devel compat-gcc* 
+yum --installroot=/var/chroots/centos6 install compat-gcc*
+```
+
+2. Get the source for the benchmark and move it into the proper folder (to make our lives easier later)
+```
+cd ~
+wget http://www.netlib.org/benchmark/hpl/hpl-2.2.tar.gz 
+tar xfvz hpl-2.2.tar.gz
+mv hpl-2.2 hpl
+cd hpl
+cp setup/Make.Linux_PII_CBLAS .
+```
+
+3. Edit the Makefile (~/hpl/Make.Linux_PII_CBLAS) , giving it the location of OpenMPI and the ATLAS/BLAS. (changes are the uncommented lines)
+
+```
+# ----------------------------------------------------------------------
+# - Message Passing library (MPI) --------------------------------------
+# ----------------------------------------------------------------------
+# MPinc tells the C compiler where to find the Message Passing library
+# header files, MPlib is defined to be the name of the library to be
+# used. The variable MPdir is only used for defining MPinc and MPlib.
+#
+MPdir = /usr/lib64/openmpi
+MPinc = -I$(MPdir)
+MPlib = /usr/lib64/libmpi.so
+#
+# ----------------------------------------------------------------------
+# - Linear Algebra library (BLAS or VSIPL) -----------------------------
+# ----------------------------------------------------------------------
+# LAinc tells the C compiler where to find the Linear Algebra library
+# header files, LAlib is defined to be the name of the library to be
+# used. The variable LAdir is only used for defining LAinc and LAlib.
+#
+LAdir = /usr/lib64/atlas
+LAinc =
+LAlib = $(LAdir)/libcblas.a $(LAdir)/libatlas.a
+#
+
+```
+
+4. Compile the benchmark and copy the new binary to the user's home directory.
+```
+make arch=Linux_PII_CBLAS
+cp bin/Linux_PII_CBLAS/xhpl /home/devans 
+chown devans.devans /home/devans/xhpl
+```
+
+5. Configure your HPL.dat file. Just plug your node specifications into the following online tool, and it will generate the file for you:
+http://www.advancedclustering.com/faq/how-do-i-tune-my-hpldat-file.html
+
+6. Once xhpl and HPL.dat are both in your user’s home directory, you may run the benchmark in one of two ways:
+
+###Using OpenMPI directly. 
+Create a file named machines in the user's home directory, and give it the following contents, adjusting for your own nodes.
+
+```
+vi /home/devans/machines
+lisa0000
+lisa0001
+lisa0002
+lisa0003
+lisa0004
+lisa0005
+lisa0006
+lisa0007
+```
+Next, invoke the benchmark using mpirun, and make sure the –np attribute equals the number of your nodes, multiplied by the number of cores in each node. (eg, 8 nodes x 2 cpus x 4 cores = 64)
+
+```
+su - devans
+mpirun --machinefile machines -np 64 ./xhpl
+```
+
+### Using Slurm
+Allocate the resources for the benchmark and make sure the –n attribute equals the number of your nodes, multiplied by the number of cores in each node. (eg, 8 nodes x 2 cpus x 4 cores = 64)
+
+```
+salloc –n64 sh
+```
+
+Inside the provided shell, call the benchmark using mpirun. Note: No parameters are needed – as they are already inferred from the allocation we did previously.
+
+```
+mpirun ./xhpl
+```
+
+Sample HPL.out file generated by the benchmark. The score in this example for our sample cluster was 328 Gflops.
+```
+================================================================================ 
+HPLinpack 2.0 -- High-Performance Linpack benchmark -- September 10, 2008 Written by A. Petitet and R. Clint Whaley, Innovative Computing Laboratory, UTK Modified by Piotr Luszczek, Innovative Computing Laboratory, UTK
+Modified by Julien Langou, University of Colorado Denver ================================================================================
+An explanation of the input/output parameters follows: 
+T/V : Wall time / encoded variant.
+N : The order of the coefficient matrix A.
+NB : The partitioning blocking factor.
+P      : The number of process rows.
+Q      : The number of process columns.
+Time : Time in seconds to solve the linear system. 
+Gflops : Rate of execution for solving the linear system.
+
+The following parameter values will be used:
+
+N : 150000
+NB : 128
+PMAP : Row-major process mapping 
+P:8
+Q:8
+PFACT : Right
+NBMIN : 4
+NDIV: 2
+RFACT : Crout
+BCAST : 1ringM
+DEPTH : 1
+SWAP : Mix (threshold = 64)
+L1 : transposed form
+U : transposed form
+EQUIL : yes
+ALIGN : 8 double precision words
+--------------------------------------------------------------------------------
+- The matrix A is randomly generated for each test.
+- The following scaled residual check will be computed:
+||Ax-b||_oo / ( eps * ( || x ||_oo * || A ||_oo + || b ||_oo ) * N )
+- The relative machine precision (eps) is taken to be 1.110223e-16 
+- Computational tests pass if scaled residuals are less than 16.0
+================================================================================ 
+T/V       N     NB  P Q Time    Gflops 
+-------------------------------------------------------------------------------- 
+WR11C2R4 150000 128 8 8 6859.11 3.280e+02 -------------------------------------------------------------------------------- ||Ax-b||_oo/(eps*(||A||_oo*||x||_oo+||b||_oo)*N)= 0.0019772 ...... PASSED ================================================================================
+Finished 1 tests with the following results:
+1 tests completed and passed residual checks, 
+0 tests completed and failed residual checks,
+0 tests skipped because of illegal input values. --------------------------------------------------------------------------------
+End of Tests. ================================================================================ 
+(END)
+                              
+```
 
 
 
