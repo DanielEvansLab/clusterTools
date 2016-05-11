@@ -851,6 +851,9 @@ scontrol update NodeName=lisa0001 State=Resume
 scontrol show nodes
 ```
 
+```
+srun -w lisa000[2-4] hostname
+```
 
 #Install HPL Benchmark
 This procedure assumes that you have installed the EPEL repo on both the master and nodes, as described in Section 2: Installing Warewulf.
