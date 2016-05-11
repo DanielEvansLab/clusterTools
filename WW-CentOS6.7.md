@@ -999,6 +999,8 @@ End of Tests. ==================================================================
 (END)
                               
 ```
+Dan, did not delete in case you wanted for reference
+
 
 Excluded /opt in /etc/warewulf/vnfs.conf.
 Shared /opt on marge to all nodes using NFS.
@@ -1030,3 +1032,78 @@ pdsh -w lisa00[01-04] reboot
 ```
 
 After rebooting nodes, /opt was excluded, but I can't see /opt exported from marge to nodes.
+
+
+5/11/2016   fixed up what dan had started here
+
+create a data and opt-nodes on ringo and mount on headnode and put in
+changeroot.  
+
+NOTE:  cannot exclude /opt in /etc/warewulf/vnfs.conf since need the
+mount points to be already be there for the nfs mounts.
+
+On head node:
+
+added to /etc/hosts at the top
+
+```
+172.10.10.3 ringo
+```
+
+added to /etc/fstab
+
+```
+172.10.10.3:/opt-nodes/ /opt/ nfs rw,soft,bg 0 0
+172.10.10.3:/data/ /data/ nfs rw,soft,bg 0 0
+```
+
+NOTE:  did not move /home over to the file server yet due to issues with
+uids, etc.  Need to think about some more.  Maybe ldap....
+
+In the chroot:
+
+In etc/fstab, added:
+
+```
+172.10.10.3:/opt-nodes/ /opt/ nfs rw,soft,bg 0 0
+172.10.10.3:/data/ /data/ nfs rw,soft,bg 0 0
+```
+created /data and /opt directories for mount points
+
+On the NFS server, ringo:
+
+created /data and /opt-nodes for export
+
+added to /etc/exports:
+
+```
+/data/ 172.10.10.0/255.255.255.0(rw,no_root_squash,async)
+/opt-nodes/ 172.10.10.0/255.255.255.0(rw,no_root_squash,async)
+```
+
+NOTE:  there is a /home-ww directory for home directories that was copied
+over but we are not using it at the present time.
+
+In /etc/fstab, added:
+The last 0 indicates to never do a chkdsk on reboot.  
+
+```
+UUID=a6205796-975a-48ac-94de-848b831c667a /data	ext4 defaults 0 0
+```
+This is for the 4TB data drive on /dev/sdb that Alaric created.  We 
+formatted it and retrived the UUID to use after formatting.  
+```
+fdisk -l 
+mkfs -t ext4 /dev/sdb 
+blkid
+```
+We did not use LVM (which is often used for space management) so we
+should revisit add it to a questions list.
+
+
+NFS was not started so started it and did a chkconfig nfs on
+
+iptables was also on by default - turned off and did chkconfig iptables off
+
+
+
