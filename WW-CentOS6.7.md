@@ -309,7 +309,7 @@ wwvnfs --chroot /var/chroots/centos6
 ```
 Then reboot the nodes to load the modified VNFS.
 ```
-pdsh -n lisa00[01-02] reboot
+pdsh -w lisa00[01-02] reboot
 ```
 
 4. Synchronizing user/group accounts to the nodes
@@ -590,8 +590,6 @@ munge -n | ssh n0000 unmunge      // test remotely
 NOTE – make sure your clocks are synced (or at least very close) or munge will report an error
 ```
 
-##We stopped here##
-
 #NTP
 http://www.cyberciti.biz/faq/rhel-fedora-centos-configure-ntp-client-server/
 
@@ -611,24 +609,27 @@ chkconfig --list | grep ntpd
 service ntpd restart
 ```
 
-I used the install defaults on Scientific Linux 6.2 on my test system. The file /etc/ntp.conf defines the NTP configuration, with three important lines that point to external servers for synchronizing the clock of the master node:
+The file /etc/ntp.conf defines the NTP configuration, with three important lines that point to external servers for synchronizing the clock of the master node:
 ```
 # Use public servers from the pool.ntp.org project.
 # Please consider joining the pool (http://www.pool.ntp.org/join.html). 
-server 0.rhel.pool.ntp.org                 
-server 1.rhel.pool.ntp.org             
-server 2.rhel.pool.ntp.org
+server 0.centos.pool.ntp.org iburst              
+server 1.centos.pool.ntp.org iburst        
+server 2.centos.pool.ntp.org iburst
+server 3.centos.pool.ntp.org iburst
 ```
 
-Do I also have to add a restrict line under each server?
-
-Also want to restrict the hosts that can query our ntpd to only include hosts on our subnet. This is Dan's experimental code...
+Also want to restrict the hosts that can query our ntpd to only include hosts on our subnet. 
 ```
-vi /etc/ntpd.conf
-restrict default limited kod nomodify notrap nopeer noquery
-restrict 127.0.0.1
+vi /etc/ntp.conf
+restrict default kod nomodify notrap nopeer noquery
+restrict -6 default kod nomodify notrap nopeer noquery
 
+restrict 127.0.0.1 
+restrict -6 ::1
 
+# Hosts on local network are less restricted.
+restrict 172.10.10.0 mask 255.255.255.0 nomodify notrap
 ```
 
 This means the master node is using three external sources for synchronizing clocks. To check this, you can simply use the ntpq command along with the lpeers option:
@@ -657,12 +658,13 @@ Now that NTP is installed into the chroot, you just need to configure it by edit
 
 #driftfile /var/lib/ntp/drift
 
-restrict default ignore
-restrict 127.0.0.1
+#restrict default ignore
+#restrict 127.0.0.1
 server 172.10.10.2
-restrict 172.10.10.2 nomodify
+#restrict 172.10.10.2 nomodify
 ```
 where 172.10.10.2 is the IP address of the master node. (It uses the private cluster network.)
+We commented out all the restrict lines on the compute node. Might want to add some back once we understand ntp.conf better.
 
 To get NTP ready to run on the compute nodes, you have one more small task. When ntp is installed into the chroot, it is not configured to start automatically, so you need to force it to run. A simple way to do this is to put the commands into the etc/rc.d/rc.local file in the chroot. For this example, the full path to the file is /var/chroots/centos6/etc/rc.d/rc.local and should look as follows:
 ```
@@ -697,6 +699,7 @@ ntpq> lpeers
 ntpq> quit
 ```
 
+Can also run ntpq -p using pdsh.
 
 2. Install SLURM on master
 To build RPMs directly, copy the distributed tar-ball into a directory and execute rpmbuild -ta slurm-14.03.9.tar.bz2 with the appropriate Slurm version number. The rpm file will be installed under the $(HOME)/rpmbuild directory of the user building them. 
@@ -714,7 +717,7 @@ yum install slurm-2.3.4-1.el6.x86_64.rpm slurm-devel-2.3.4-1.el6.x86_64.rpm slur
 https://computing.llnl.gov/linux/slurm/configurator.html
 and saving the result to /etc/slurm/slurm.conf However, here is my conf file for your convenience:
 
-Please note you may need to adjust the Sockets and CoresPerSocket parameters based on your hardware configuration. Also, please note that the last two lines in the file begin with “NodeName” and “PartitionName” respectively. I don’t want the word wrap to make you think there should be line breaks where there shouldn’t be).
+Please note you may need to adjust the Sockets and CoresPerSocket parameters based on your hardware configuration. There should be a line break between “NodeName” and “PartitionName”.
 
 ```
 vi /etc/slurm/slurm.conf
@@ -811,7 +814,8 @@ JobCompType=jobcomp/none
 #AccountingStorageUser=
 #
 # COMPUTE NODES
-NodeName=lisa00[01-16] Sockets=2 CoresPerSocket=6 ThreadsPerCore=2 State=UNKNOWN PartitionName=allnodes Nodes=lisa00[00-16] Default=YES MaxTime=INFINITE State=UP
+NodeName=lisa00[01-16] Sockets=2 CoresPerSocket=6 ThreadsPerCore=2 State=UNKNOWN 
+PartitionName=allnodes Nodes=lisa00[00-16] Default=YES MaxTime=INFINITE State=UP
 #ALL OF THE NODES ABOVE MUST BE RESOLVABLE OR ELSE SLURM WILL NOT START!
 ```
 
@@ -836,14 +840,14 @@ exit
 6. Rebuild VNFS, reboot nodes
 ```
 wwvnfs --chroot /var/chroots/centos6
-pdsh –w n00[00-99] reboot
+pdsh –w lisa00[01-04] reboot
 ```
 
 7. Check that slurm sees the nodes
 ```
 scontrol show nodes
 -- If nodes’ state shows as DOWN, run the following: --
-scontrol update NodeName=ClusterNode0 State=Resume 
+scontrol update NodeName=lisa0001 State=Resume 
 scontrol show nodes
 ```
 
@@ -904,6 +908,7 @@ chown devans.devans /home/devans/xhpl
 
 5. Configure your HPL.dat file. Just plug your node specifications into the following online tool, and it will generate the file for you:
 http://www.advancedclustering.com/faq/how-do-i-tune-my-hpldat-file.html
+4 nodes, 8 cores per node, 64 GB RAM
 
 6. Once xhpl and HPL.dat are both in your user’s home directory, you may run the benchmark in one of two ways:
 
@@ -925,14 +930,14 @@ Next, invoke the benchmark using mpirun, and make sure the –np attribute equal
 
 ```
 su - devans
-mpirun --machinefile machines -np 64 ./xhpl
+mpirun --machinefile machines -np 32 ./xhpl
 ```
 
 ### Using Slurm
 Allocate the resources for the benchmark and make sure the –n attribute equals the number of your nodes, multiplied by the number of cores in each node. (eg, 8 nodes x 2 cpus x 4 cores = 64)
 
 ```
-salloc –n64 sh
+salloc –n32 sh
 ```
 
 Inside the provided shell, call the benchmark using mpirun. Note: No parameters are needed – as they are already inferred from the allocation we did previously.
@@ -992,5 +997,33 @@ End of Tests. ==================================================================
                               
 ```
 
+Excluded /opt in /etc/warewulf/vnfs.conf.
+Shared /opt on marge to all nodes using NFS.
+On the master, edit /etc/exports (changes in red):
+```
+vi /etc/exports
+/home/ 172.10.10.2/255.255.255.0(rw,no_root_squash,async)
+/opt/ 172.10.10.2/255.255.255.0(rw,no_root_squash,async)
+```
 
+Next is to edit the nodes’ /etc/fstab. In order to do this, we directly modify the chrooted OS we made earlier (/var/chroots/centos6):
+```
+vi /var/chroots/centos6/etc/fstab
+#GENERATED_ENTRIES#
+tmpfs /dev/shm tmpfs defaults 0 0
+devpts /dev/pts devpts gid=5,mode=620 0 0
+sysfs /sys sysfs defaults 0 0
+proc /proc proc defaults 0 0
 
+172.10.10.2:/home/ /home/ nfs rw,soft,bg 0 0
+172.10.10.2:/opt/ /opt/ nfs rw,soft,bg 0 0
+```
+
+Then, rebuild the node image from the modified chroot
+```
+service nfs restart
+wwvnfs --chroot /var/chroots/centos6
+pdsh -w lisa00[01-04] reboot
+```
+
+After rebooting nodes, /opt was excluded, but I can't see /opt exported from marge to nodes.
