@@ -31,6 +31,8 @@ marge           | eth0: 10.2.0.128 / eth1 (LAN internal): 172.10.10.2
 wiggum/NFS      | eth0: 10.2.0.129 / eth1 (LAN internal): 172.10.10.3
 lisa0001        | eth0: 172.10.10.4
 lisa0002        | eth0: 172.10.10.5
+lisa0003        | eth0: 172.10.10.6
+lisa0004        | eth0: 172.10.10.7
 
 Set hostname on head node. We will specify worker node hostnames in /etc/hosts
 ```
@@ -323,13 +325,13 @@ Use same passwd as root account.
 Provision the master's /etc/passwd to the nodes
 ```
 wwsh file import /etc/passwd
-wwsh provision set lisa[0000-0002] --fileadd passwd
+wwsh provision set lisa[0001-0002] --fileadd passwd
 ```
 
 Provision the master's /etc/group to nodes.
 ```
 wwsh file import /etc/group
-wwsh provision set lisa[0000-0002] --fileadd group
+wwsh provision set lisa[0001-0002] --fileadd group
 ```
 
 In order to provide password-less access for users to the nodes, each time you create a user, make sure you generate a key pair and add it to authorized_keys. Since the home folder is shared between all nodes, you only need to do this once for each user at inception. Our user will be ‘devans’.
@@ -359,7 +361,7 @@ wwvnfs --chroot /var/chroots/centos6
 ```
 reboot nodes to deliver the latest vnfs.
 
-6. Configure node's HD as swap or scrath.
+6. Configure node's HD as swap or scratch.
 come back to this once we have the drives.....
 
 #Installing Ganglia
