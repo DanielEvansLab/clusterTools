@@ -203,6 +203,7 @@ If you screw up the config on a node, delete it like this:
 wwsh node delete lisa0001
 ```
 Then, run wwnodescan to add it again. Or you can use node new followed by provision set. See the provision documentation at the warewulf site.
+You need to run nodescan before you reboot a new node.
 
 4. Once the nodes have been registered, we need to update the master’s DHCP conf to include all of the node’s MACs and IPs.
 ```
@@ -1107,5 +1108,65 @@ NFS was not started so started it and did a chkconfig nfs on
 
 iptables was also on by default - turned off and did chkconfig iptables off
 
+
+##Install R
+```
+yum --installroot=/var/chroots/centos6 install R
+```
+261 MB including dependencies
+This is ok, but I received a bunch of warnings on the worker node when starting R that various environment variables were missing.
+
+###R User libraries
+```
+su devans
+mkdir ~/Rlibs
+vi .Renviron
+R_LIBS="~/Rlibs"
+```
+
+##Install ncdf
+```
+yum --installroot=/var/chroots/centos6 install netcdf.x86_64
+#installs version 4.1.1-3.el6.5
+#hdf5 arch x86_64 version 1.8.5.patch1-9.el6 installed as dependency
+yum --installroot=/var/chroots/centos6 install netcdf-devel.x86_64
+#installed dependencies: autoconf, automake, hdf5-devel, libcurl-devel, libidn-devel, m4. 
+#updated dependencies: curl, libcurl
+
+wwvnfs --chroot /var/chroots/centos6
+pdsh -w lisa00[01-04] reboot
+
+#where was netcdf installed?
+ssh lisa0001
+rpm -ql netcdf
+#shared libraries /usr/lib64/
+```
+
+Can't install ncdf from lisa0001 because she's not internet-connected. So, I downloaded the latest version of ncdf from cran.
+```
+cd /home/devans/Rlibs/src/ncdf
+wget https://cran.r-project.org/src/contrib/ncdf4_1.15.tar.gz
+```
+
+Now, login to lisa0001 and try to install from source.
+```
+su devans
+ssh lisa0001
+R CMD INSTALL ~/Rlibs/src/ncdf/ncdf4_1.15.tar.gz
+#Also tried as root to no avail
+```
+Configure error within R, "cannot run C compiled programs" Seems like development tools are needed on the nodes.
+Not ideal, but I'll install that now just to get things running, and we'll come up with a more elegant solution later.
+
+Install development tools in chroot (this is getting bloated!)
+```
+yum --installroot=/var/chroots/centos6 groupinstall "Development Tools"
+
+wwvnfs --chroot /var/chroots/centos6
+du -hs /var/chroots/centos6 #2.8Gb! This is getting bloated!
+pdsh -w lisa00[01-04] reboot
+```
+
+I still get "cannot run C compiled programs" error from R!
 
 
