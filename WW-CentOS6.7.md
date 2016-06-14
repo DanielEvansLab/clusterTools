@@ -1117,6 +1117,7 @@ yum --installroot=/var/chroots/centos6 install R
 This is ok, but I received a bunch of warnings on the worker node when starting R that various environment variables were missing.
 
 ###R User libraries
+General strategy is to create Rlib dir in devans home directory, and set environment variable to point to the dir.
 ```
 su devans
 mkdir ~/Rlibs
@@ -1139,10 +1140,10 @@ pdsh -w lisa00[01-04] reboot
 #where was netcdf installed?
 ssh lisa0001
 rpm -ql netcdf
-#shared libraries /usr/lib64/
+#shared libraries /usr/lib64/ in chroot.
 ```
 
-Can't install ncdf from lisa0001 because she's not internet-connected. So, I downloaded the latest version of ncdf from cran.
+Can't install ncdf from lisa0001 because she's not internet-connected. So, I downloaded the latest version of ncdf from cran while on marge.
 ```
 cd /home/devans/Rlibs/src/ncdf
 wget https://cran.r-project.org/src/contrib/ncdf4_1.15.tar.gz
@@ -1167,6 +1168,6 @@ du -hs /var/chroots/centos6 #2.8Gb! This is getting bloated!
 pdsh -w lisa00[01-04] reboot
 ```
 
-I still get "cannot run C compiled programs" error from R!
+I still get "cannot run C compiled programs" error from R when I run R CMD INSTALL ~/Rlibs/src/ncdf/ncdf4_1.15.tar.gz
 
 
