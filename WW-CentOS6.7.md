@@ -1171,3 +1171,38 @@ pdsh -w lisa00[01-04] reboot
 I still get "cannot run C compiled programs" error from R when I run R CMD INSTALL ~/Rlibs/src/ncdf/ncdf4_1.15.tar.gz
 
 
+6/15/2016  rt
+
+Uninstalled R.  Did not uninstall things under the Rlibs directory.
+
+yum --installroot=/var/chroots/centos6/ remove R
+
+Uninstalled "Development Tools"
+
+yum --installroot=/var/chroots/centos6/ groupremove "Development Tools"
+134 packages removed.... dependencies....
+
+built R from source and installed in /opt/local.  Available on marge and all nodes.
+Did not update environment variables.
+Installed 2.15.3 since current release did not have current zlib and no updates available 
+using yum.  Current R is 3.3.0.using
+
+wget https://cran.cnr.berkeley.edu/src/base/R-2/R-2.15.3.tar.gz
+./configure --with-x=no
+make
+make check
+make prefix=/opt/local install
+
+On marge, installed the following:
+
+yum install netcdf.x87_64
+yum install netcdf-devel.x86_64
+
+and
+
+ /opt/local/bin/R CMD INSTALL ncdf4_1.15.tar.gz
+
+
+
+
+
