@@ -285,6 +285,10 @@ On the master, edit /etc/exports (changes in red):
 vi /etc/exports
 /home/ 172.10.10.2/255.255.255.0(rw,no_root_squash,async)
 ```
+Force refresh with
+exportfs -r
+
+pdsh -w mount can mount a directory, but it's lost when you reboot.
 
 Next is to edit the nodes’ /etc/fstab. In order to do this, we directly modify the chrooted OS we made earlier (/var/chroots/centos6):
 ```
@@ -713,7 +717,7 @@ To build RPMs directly, copy the distributed tar-ball into a directory and execu
 yum install readline-devel openssl-devel pam-devel
 rpmbuild -ta slurm*.tar.bz2
 cd ~/rpmbuild/RPMS/x86_64
-yum install slurm-2.3.4-1.el6.x86_64.rpm slurm-devel-2.3.4-1.el6.x86_64.rpm slurm- plugins-2.3.4-1.el6.x86_64.rpm slurm-munge-2.3.4-1.el6.x86_64.rpm
+
 ```
 
 3. Generate your config file. You can do this by going to
@@ -817,7 +821,7 @@ JobCompType=jobcomp/none
 #AccountingStorageUser=
 #
 # COMPUTE NODES
-NodeName=lisa00[01-16] Sockets=2 CoresPerSocket=6 ThreadsPerCore=2 State=UNKNOWN 
+NodeName=lisa00[01-16] Sockets=2 CoresPerSocket=6 ThreadsPerCore=1 State=UNKNOWN 
 PartitionName=allnodes Nodes=lisa00[00-16] Default=YES MaxTime=INFINITE State=UP
 #ALL OF THE NODES ABOVE MUST BE RESOLVABLE OR ELSE SLURM WILL NOT START!
 ```
@@ -856,6 +860,9 @@ scontrol show nodes
 
 ```
 srun -w lisa000[2-4] hostname
+
+/usr/sbin/slurmctld -Dvc #this will report the error logs of slurm.
+We had to restart slurmd on head node and workers. Then, we had to make sure the conf file was right, then added conf file to var/chroot.
 ```
 
 #Install HPL Benchmark
