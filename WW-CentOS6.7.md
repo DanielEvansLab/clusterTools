@@ -1210,6 +1210,47 @@ and
  /opt/local/bin/R CMD INSTALL ncdf4_1.15.tar.gz
 
 
+### Install R using yum
+I'm trying approach that Richard suggested awhile back to me. Install R using yum in its default location in marge, then also installing R using yum into the chroot. By having the same version of R installed in both places, I can build packages like ncdf4 on marge into a system-wide NFS directory that the chroot R can use.
+
+```
+yum install R #installed 3.3.0. R and Rscript in /usr/bin/R. R tree in /usr/lib64/R.
+
+yum --installroot=/var/chroots/centos6 install R #this installed 3.3.0 in chroot. Same relative directories as root filesystem
+
+```
+Can update R versions using `yum update R` and `yum --installroot=/var/chroots/centos6 update R`
+
+The R tree at /usr/lib64/R is 101MB. I'll hybridize /usr/lib64/R.
+First, create NFS mount of the entire chroot on marge. Add this line to /etc/exports
+```
+vi /etc/exports
+/var/chroots 172.10.10.0/255.255.255.0(ro,no_root_squash,async)
+```
+Then, create mount point on chroot and add entry in fstab.
+```
+cd /var/chroots/centos6/
+mkdir vnfs
+vi /var/chroots/centos6/etc/fstab
+172.10.10.2:/var/chroots/centos6 /vnfs nfs ro,soft,bg 0 0
+
+```
+Edit /etc/warewulf/vnfs.conf
+```
+hybridpath = /vnfs
+#hybridpath is appended to hybridized directories. 
+
+#I also uncommented the following line:
+hybridize += /usr/lib64/R
+```
+
+Build vnfs. No need to include --hybridpath=/vnfs because it is specified in vnfs.conf.
+```
+wwvnfs --chroot /var/chroots/centos6
+pdsh -w lisa000[1-4] reboot
+```
+
+I must have excluded something in the hybridize commands that is required for ssh. After reboot, I can ping lisa0001, but I can't ssh into it. I either have to figure out hybridpath better or not use it. 
 
 
 
